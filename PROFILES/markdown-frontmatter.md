@@ -128,6 +128,12 @@ target:
   id: ISSUE-0003
 ```
 
+The shorthand and verbose forms are semantically equivalent in this profile.
+Writers MAY normalize between them, but such normalization is a
+serialization-only rewrite rather than a canonical change. Writers SHOULD
+preserve the author's chosen form unless an explicit user action or documented
+normalization policy rewrites it.
+
 ## 5. Title Rendering
 
 The canonical title is `title` in frontmatter.

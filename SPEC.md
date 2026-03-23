@@ -109,6 +109,7 @@ Rules:
 - Transition into `in_progress` is the start of active work.
 - Transition into `completed` is a successful close.
 - Transition into `canceled` is an unsuccessful close.
+- An issue MUST enter `in_progress` before it enters `completed`.
 - Non-terminal issues MUST NOT declare `resolution`.
 - Terminal issues MUST declare `resolution`.
 
@@ -205,6 +206,9 @@ Interpretation:
 - `depends_on` is always a blocking dependency.
 - `required_before: in_progress` blocks transition of the source issue into `in_progress`.
 - `required_before: completed` blocks transition of the source issue into `completed`.
+- Because `completed` requires prior entry into `in_progress`, an unsatisfied
+  `required_before: in_progress` dependency also prevents any attempt to close
+  the source issue directly as `completed`.
 - Dependencies never block transition of the source issue into `canceled`.
 - A dependency is satisfied when the target issue has `status: completed` and
   `resolution: done`.
@@ -306,11 +310,21 @@ defined in Sections 6.3 and 6.4.
   `body`, `links`, and `extensions`.
 - Writers SHOULD NOT change `updated_at` for formatting-only or
   serialization-only rewrites that do not change canonical issue data.
+- If a profile defines multiple equivalent serializations of the same canonical
+  value, rewriting between those equivalent encodings is a serialization-only
+  change rather than a canonical mutation.
+- In the Markdown frontmatter profile, rewriting a shorthand `IssueRef` target
+  string such as `target: ISSUE-0003` into its equivalent object form with the
+  same canonical `id` is a serialization-only rewrite and SHOULD NOT by itself
+  change `updated_at`.
 - Writers MUST preserve unknown keys and values under `extensions` and
   `link.extensions` when reading and rewriting a document, unless explicitly
   instructed to remove them.
 - Writers MUST preserve `links` array ordering on round-trip unless an explicit
   user action or documented normalization policy reorders it.
+- Writers SHOULD preserve the author's chosen encoding when equivalent
+  serializations are available, unless an explicit user action or documented
+  normalization policy rewrites them.
 - Readers MUST NOT infer semantics from frontmatter key ordering.
 
 ## 12. Markdown Serialization Profile
