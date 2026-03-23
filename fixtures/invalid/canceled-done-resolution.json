@@ -1,0 +1,9 @@
+{
+  "spec_version": "mis/0.1",
+  "id": "ISSUE-0091",
+  "title": "Canceled issue cannot use done",
+  "kind": "task",
+  "status": "canceled",
+  "resolution": "done",
+  "created_at": "2026-03-22T10:24:00-05:00"
+}

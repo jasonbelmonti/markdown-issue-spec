@@ -1,0 +1,254 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Markdown Issue Spec Markdown Frontmatter Profile",
+  "description": "Parsed YAML frontmatter for the mis/0.1 Markdown frontmatter profile. This schema validates frontmatter only; Markdown body structure and graph-wide semantics are intentionally out of scope.",
+  "$comment": "Out of scope for this schema: Markdown body contents, self-links, missing target resolution, parent/dependency cycles, and semantic agreement between target.id and locator hints.",
+  "type": "object",
+  "required": [
+    "spec_version",
+    "id",
+    "title",
+    "kind",
+    "status",
+    "created_at"
+  ],
+  "properties": {
+    "spec_version": {
+      "const": "mis/0.1"
+    },
+    "id": {
+      "$ref": "#/$defs/nonEmptyString"
+    },
+    "title": {
+      "$ref": "#/$defs/nonEmptyString"
+    },
+    "kind": {
+      "$ref": "#/$defs/nonEmptyString"
+    },
+    "status": {
+      "enum": [
+        "proposed",
+        "accepted",
+        "in_progress",
+        "completed",
+        "canceled"
+      ]
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "resolution": {
+      "enum": [
+        "done",
+        "duplicate",
+        "obsolete",
+        "wont_do",
+        "superseded"
+      ]
+    },
+    "summary": {
+      "$ref": "#/$defs/nonEmptyString"
+    },
+    "priority": {
+      "$ref": "#/$defs/nonEmptyString"
+    },
+    "labels": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/nonEmptyString"
+      }
+    },
+    "assignees": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/nonEmptyString"
+      }
+    },
+    "links": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/link"
+      }
+    },
+    "extensions": {
+      "$ref": "#/$defs/extensions"
+    },
+    "body": false,
+    "description": false
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "enum": [
+              "proposed",
+              "accepted",
+              "in_progress"
+            ]
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "not": {
+          "required": [
+            "resolution"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "completed"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "required": [
+          "resolution"
+        ],
+        "properties": {
+          "resolution": {
+            "const": "done"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "canceled"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "required": [
+          "resolution"
+        ],
+        "properties": {
+          "resolution": {
+            "enum": [
+              "duplicate",
+              "obsolete",
+              "wont_do",
+              "superseded"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "extensions": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "issueRefObject": {
+      "type": "object",
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "href": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "path": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "title": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      },
+      "additionalProperties": false
+    },
+    "issueRef": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        {
+          "$ref": "#/$defs/issueRefObject"
+        }
+      ]
+    },
+    "link": {
+      "type": "object",
+      "required": [
+        "rel",
+        "target"
+      ],
+      "properties": {
+        "rel": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "target": {
+          "$ref": "#/$defs/issueRef"
+        },
+        "required_before": {
+          "enum": [
+            "in_progress",
+            "completed"
+          ]
+        },
+        "note": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "extensions": {
+          "$ref": "#/$defs/extensions"
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "rel": {
+                "const": "depends_on"
+              }
+            },
+            "required": [
+              "rel"
+            ]
+          },
+          "then": {
+            "required": [
+              "required_before"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "required_before"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

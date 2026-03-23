@@ -1,0 +1,9 @@
+{
+  "spec_version": "mis/0.1",
+  "id": "ISSUE-0093",
+  "title": "Description in frontmatter should fail",
+  "kind": "task",
+  "status": "accepted",
+  "created_at": "2026-03-22T10:24:00-05:00",
+  "description": "This profile does not allow description in frontmatter."
+}

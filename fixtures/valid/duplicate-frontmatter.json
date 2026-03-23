@@ -1,0 +1,21 @@
+{
+  "spec_version": "mis/0.1",
+  "id": "ISSUE-0011",
+  "title": "Consolidate duplicate indexing proposal",
+  "kind": "task",
+  "status": "canceled",
+  "resolution": "duplicate",
+  "created_at": "2026-03-22T10:24:00-05:00",
+  "updated_at": "2026-03-22T10:24:00-05:00",
+  "labels": [
+    "spec",
+    "duplicate"
+  ],
+  "links": [
+    {
+      "rel": "duplicate_of",
+      "target": "ISSUE-0007",
+      "note": "Canonical profile work continues on the primary issue"
+    }
+  ]
+}

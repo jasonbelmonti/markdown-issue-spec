@@ -1,0 +1,56 @@
+{
+  "spec_version": "mis/0.1",
+  "id": "ISSUE-0007",
+  "title": "Define markdown frontmatter profile",
+  "kind": "task",
+  "status": "accepted",
+  "created_at": "2026-03-22T10:24:00-05:00",
+  "updated_at": "2026-03-22T10:24:00-05:00",
+  "priority": "high",
+  "labels": [
+    "spec",
+    "profile",
+    "dependencies"
+  ],
+  "assignees": [
+    "jason"
+  ],
+  "links": [
+    {
+      "rel": "parent",
+      "target": {
+        "id": "EPIC-0001",
+        "href": "../epics/EPIC-0001.md"
+      }
+    },
+    {
+      "rel": "depends_on",
+      "target": {
+        "id": "ISSUE-0002",
+        "href": "./ISSUE-0002.md"
+      },
+      "required_before": "in_progress",
+      "note": "ID semantics should be stable before the profile is finalized",
+      "extensions": {
+        "acme/gate": "schema-stability"
+      }
+    },
+    {
+      "rel": "depends_on",
+      "target": "ISSUE-0004",
+      "required_before": "completed",
+      "note": "Wait for example corpus review before declaring the profile complete"
+    },
+    {
+      "rel": "plugin.example/reviewed_by",
+      "target": {
+        "id": "ISSUE-0012",
+        "title": "Indexing strategy work item"
+      },
+      "note": "Custom relation types remain valid when namespaced"
+    }
+  ],
+  "extensions": {
+    "obsidian/css_class": "profile-issue"
+  }
+}

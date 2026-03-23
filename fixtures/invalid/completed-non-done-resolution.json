@@ -1,0 +1,9 @@
+{
+  "spec_version": "mis/0.1",
+  "id": "ISSUE-0092",
+  "title": "Completed issue must use done",
+  "kind": "task",
+  "status": "completed",
+  "resolution": "superseded",
+  "created_at": "2026-03-22T10:24:00-05:00"
+}

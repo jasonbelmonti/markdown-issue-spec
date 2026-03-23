@@ -1,0 +1,9 @@
+{
+  "spec_version": "mis/0.1",
+  "id": "ISSUE-0090",
+  "title": "Body in frontmatter should fail",
+  "kind": "task",
+  "status": "proposed",
+  "created_at": "2026-03-22T10:24:00-05:00",
+  "body": "This belongs in the Markdown document body, not frontmatter."
+}
