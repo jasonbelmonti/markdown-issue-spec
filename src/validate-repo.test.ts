@@ -571,6 +571,47 @@ Body`,
       expect(stderr.join("\n")).toContain("No Markdown files matched");
     });
   });
+
+  test("fails when any explicit target matches no markdown files", async () => {
+    await withTempRepo(async (tempRepo) => {
+      const emptyDir = path.join(tempRepo, "empty");
+      const markdownPath = path.join(tempRepo, "ok.md");
+      const stdout: string[] = [];
+      const stderr: string[] = [];
+
+      await mkdir(path.join(tempRepo, "docs", "schemas"), { recursive: true });
+      await mkdir(emptyDir, { recursive: true });
+      await copyFile(
+        path.join(repoRoot, "docs", "schemas", "markdown-frontmatter.schema.json"),
+        path.join(tempRepo, "docs", "schemas", "markdown-frontmatter.schema.json"),
+      );
+      await writeFile(
+        markdownPath,
+        `---
+spec_version: mis/0.1
+id: ISSUE-8000
+title: Mixed explicit targets
+kind: task
+status: proposed
+created_at: 2026-03-22T10:24:00-05:00
+---
+
+Body`,
+      );
+
+      const exitCode = await runCli([markdownPath, emptyDir], {
+        repoRoot: tempRepo,
+        cwd: tempRepo,
+        stdout: (line) => stdout.push(line),
+        stderr: (line) => stderr.push(line),
+      });
+
+      expect(exitCode).toBe(1);
+      expect(stdout).toHaveLength(0);
+      expect(stderr.join("\n")).toContain("No Markdown files matched");
+      expect(stderr.join("\n")).toContain(emptyDir);
+    });
+  });
 });
 });
 

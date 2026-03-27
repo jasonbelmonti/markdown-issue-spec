@@ -19,15 +19,14 @@ export async function validateRepository(
   const markdownPaths = options.markdownPaths ?? [];
 
   if (markdownPaths.length > 0) {
-    const files = await expandMarkdownTargets(markdownPaths);
-    ensureTargetsFound(
-      files.length,
-      "No Markdown files matched the provided path arguments.",
+    const expandedTargets = await expandMarkdownTargets(markdownPaths);
+    ensureAllExplicitTargetsMatched(
+      expandedTargets.unmatchedTargets,
     );
 
     results.push(
       ...(await Promise.all(
-        files.map((filePath) =>
+        expandedTargets.files.map((filePath) =>
           validateFile({
             category: "custom-markdown",
             expectedToValidate: true,
@@ -220,4 +219,17 @@ function ensureTargetsFound(totalTargets: number, message: string): void {
   if (totalTargets === 0) {
     throw new Error(message);
   }
+}
+
+function ensureAllExplicitTargetsMatched(unmatchedTargets: string[]): void {
+  if (unmatchedTargets.length === 0) {
+    return;
+  }
+
+  const label =
+    unmatchedTargets.length === 1
+      ? "No Markdown files matched the provided path argument"
+      : "No Markdown files matched the provided path arguments";
+
+  throw new Error(`${label}: ${unmatchedTargets.join(", ")}`);
 }

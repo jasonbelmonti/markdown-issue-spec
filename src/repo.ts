@@ -7,6 +7,11 @@ export interface RepoFiles {
   examples: string[];
 }
 
+export interface ExpandedMarkdownTargets {
+  files: string[];
+  unmatchedTargets: string[];
+}
+
 export function resolveRepoRoot(explicitRoot?: string): string {
   return explicitRoot ?? path.resolve(import.meta.dir, "..");
 }
@@ -33,19 +38,36 @@ export async function discoverRepoFiles(repoRoot: string): Promise<RepoFiles> {
   };
 }
 
-export async function expandMarkdownTargets(targetPaths: string[]): Promise<string[]> {
-  const markdownFiles = new Set<string>();
-  const visitedDirectories = new Set<string>();
+export async function expandMarkdownTargets(
+  targetPaths: string[],
+): Promise<ExpandedMarkdownTargets> {
+  const allMatchedFiles = new Set<string>();
+  const unmatchedTargets: string[] = [];
 
   for (const targetPath of targetPaths) {
-    await collectFilesWithExtension(path.resolve(targetPath), markdownFiles, {
+    const resolvedTargetPath = path.resolve(targetPath);
+    const matchedFiles = new Set<string>();
+
+    await collectFilesWithExtension(resolvedTargetPath, matchedFiles, {
       extension: ".md",
       strictRootFileExtension: true,
-      visitedDirectories,
+      visitedDirectories: new Set<string>(),
     });
+
+    if (matchedFiles.size === 0) {
+      unmatchedTargets.push(resolvedTargetPath);
+      continue;
+    }
+
+    for (const matchedFile of matchedFiles) {
+      allMatchedFiles.add(matchedFile);
+    }
   }
 
-  return Array.from(markdownFiles).sort((left, right) => left.localeCompare(right));
+  return {
+    files: Array.from(allMatchedFiles).sort((left, right) => left.localeCompare(right)),
+    unmatchedTargets,
+  };
 }
 
 async function findFiles(
