@@ -65,48 +65,81 @@ Body`,
 
   test("rejects markdown timestamp lexemes that are not RFC 3339 date-time values", async () => {
     await withTempRepo(async (tempRepo) => {
-      const dateOnlyPath = path.join(tempRepo, "date-only.md");
-      const timestampWithoutOffsetPath = path.join(tempRepo, "timestamp-without-offset.md");
+      const invalidTimestampCases = [
+        {
+          fileName: "date-only.md",
+          frontmatter: `spec_version: mis/0.1
+id: ISSUE-1100
+title: Invalid timestamp 1
+kind: task
+status: proposed
+created_at: 2026-03-22`,
+        },
+        {
+          fileName: "timestamp-without-offset.md",
+          frontmatter: `spec_version: mis/0.1
+id: ISSUE-1101
+title: Invalid timestamp 2
+kind: task
+status: proposed
+created_at: 2026-03-22 10:24:00`,
+        },
+        {
+          fileName: "quoted-key.md",
+          frontmatter: `spec_version: mis/0.1
+id: ISSUE-1102
+title: Invalid timestamp 3
+kind: task
+status: proposed
+"created_at": 2026-03-22`,
+        },
+        {
+          fileName: "spaced-key.md",
+          frontmatter: `spec_version: mis/0.1
+id: ISSUE-1103
+title: Invalid timestamp 4
+kind: task
+status: proposed
+created_at : 2026-03-22`,
+        },
+        {
+          fileName: "indented-key.md",
+          frontmatter: `  spec_version: mis/0.1
+  id: ISSUE-1104
+  title: Invalid timestamp 5
+  kind: task
+  status: proposed
+  created_at: 2026-03-22`,
+        },
+      ];
 
       await mkdir(path.join(tempRepo, "docs", "schemas"), { recursive: true });
       await copyFile(
         path.join(repoRoot, "docs", "schemas", "markdown-frontmatter.schema.json"),
         path.join(tempRepo, "docs", "schemas", "markdown-frontmatter.schema.json"),
       );
-      await writeFile(
-        dateOnlyPath,
-        `---
-spec_version: mis/0.1
-id: ISSUE-1100
-title: Date-only timestamp
-kind: task
-status: proposed
-created_at: 2026-03-22
+      const markdownPaths = await Promise.all(
+        invalidTimestampCases.map(async ({ fileName, frontmatter }) => {
+          const markdownPath = path.join(tempRepo, fileName);
+          await writeFile(
+            markdownPath,
+            `---
+${frontmatter}
 ---
 
 Body`,
-      );
-      await writeFile(
-        timestampWithoutOffsetPath,
-        `---
-spec_version: mis/0.1
-id: ISSUE-1101
-title: Timestamp without offset
-kind: task
-status: proposed
-created_at: 2026-03-22 10:24:00
----
-
-Body`,
+          );
+          return markdownPath;
+        }),
       );
 
       const result = await validateRepository({
         repoRoot: tempRepo,
-        markdownPaths: [dateOnlyPath, timestampWithoutOffsetPath],
+        markdownPaths,
       });
 
-      expect(result.summary.examples.total).toBe(2);
-      expect(result.summary.examples.failed).toBe(2);
+      expect(result.summary.examples.total).toBe(invalidTimestampCases.length);
+      expect(result.summary.examples.failed).toBe(invalidTimestampCases.length);
       expect(
         result.results.every((entry) =>
           entry.errors.some((error) => error.includes("must match format \"date-time\"")),
