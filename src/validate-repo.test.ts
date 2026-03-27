@@ -195,6 +195,64 @@ Body`,
       expect(result.summary.examples.failed).toBe(0);
     });
   });
+
+  test("does not follow symlinked directories outside the repo during repo discovery", async () => {
+    await withTempRepo(async (tempRepo) => {
+      const outsideDir = await mkdtemp(path.join(os.tmpdir(), "markdown-issue-spec-outside-"));
+
+      try {
+        await mkdir(path.join(tempRepo, "docs", "schemas"), { recursive: true });
+        await mkdir(path.join(tempRepo, "docs", "examples"), { recursive: true });
+        await copyFile(
+          path.join(repoRoot, "docs", "schemas", "markdown-frontmatter.schema.json"),
+          path.join(tempRepo, "docs", "schemas", "markdown-frontmatter.schema.json"),
+        );
+        await writeFile(
+          path.join(tempRepo, "docs", "examples", "ok.md"),
+          `---
+spec_version: mis/0.1
+id: ISSUE-1200
+title: In-repo example
+kind: task
+status: proposed
+created_at: 2026-03-22T10:24:00-05:00
+---
+
+Body`,
+        );
+        await writeFile(
+          path.join(outsideDir, "outside.md"),
+          `---
+spec_version: mis/0.1
+id: ISSUE-1201
+title: Outside example
+kind: task
+status: proposed
+created_at: 2026-03-22T10:24:00-05:00
+---
+
+Body`,
+        );
+        await symlink(
+          outsideDir,
+          path.join(tempRepo, "docs", "examples", "linked-outside"),
+        );
+
+        const result = await validateRepository({
+          repoRoot: tempRepo,
+          examplesOnly: true,
+        });
+
+        expect(result.summary.examples.total).toBe(1);
+        expect(result.summary.examples.failed).toBe(0);
+        expect(result.results.map((entry) => entry.filePath)).toEqual([
+          path.join(tempRepo, "docs", "examples", "ok.md"),
+        ]);
+      } finally {
+        await rm(outsideDir, { recursive: true, force: true });
+      }
+    });
+  });
 });
 
 describe.serial("runCli", () => {

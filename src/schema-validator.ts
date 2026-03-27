@@ -21,7 +21,10 @@ export function loadSchemaValidator(repoRoot: string): Promise<SchemaValidator> 
     return cached;
   }
 
-  const validatorPromise = createSchemaValidator(repoRoot);
+  const validatorPromise = createSchemaValidator(repoRoot).catch((error) => {
+    validatorCache.delete(repoRoot);
+    throw error;
+  });
   validatorCache.set(repoRoot, validatorPromise);
   return validatorPromise;
 }

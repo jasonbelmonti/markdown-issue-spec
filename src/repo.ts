@@ -16,10 +16,20 @@ export function relativeRepoPath(repoRoot: string, filePath: string): string {
 }
 
 export async function discoverRepoFiles(repoRoot: string): Promise<RepoFiles> {
+  const canonicalRepoRoot = await realpath(repoRoot);
+
   return {
-    validFixtures: await findFiles(path.join(repoRoot, "docs", "fixtures", "valid"), ".json"),
-    invalidFixtures: await findFiles(path.join(repoRoot, "docs", "fixtures", "invalid"), ".json"),
-    examples: await findFiles(path.join(repoRoot, "docs", "examples"), ".md"),
+    validFixtures: await findFiles(
+      path.join(repoRoot, "docs", "fixtures", "valid"),
+      ".json",
+      canonicalRepoRoot,
+    ),
+    invalidFixtures: await findFiles(
+      path.join(repoRoot, "docs", "fixtures", "invalid"),
+      ".json",
+      canonicalRepoRoot,
+    ),
+    examples: await findFiles(path.join(repoRoot, "docs", "examples"), ".md", canonicalRepoRoot),
   };
 }
 
@@ -38,10 +48,15 @@ export async function expandMarkdownTargets(targetPaths: string[]): Promise<stri
   return Array.from(markdownFiles).sort((left, right) => left.localeCompare(right));
 }
 
-async function findFiles(dirPath: string, extension: string): Promise<string[]> {
+async function findFiles(
+  dirPath: string,
+  extension: string,
+  allowedRoot?: string,
+): Promise<string[]> {
   const matchedFiles = new Set<string>();
   try {
     await collectFilesWithExtension(dirPath, matchedFiles, {
+      allowedRoot,
       extension,
       strictRootFileExtension: false,
       visitedDirectories: new Set<string>(),
@@ -58,6 +73,7 @@ async function findFiles(dirPath: string, extension: string): Promise<string[]> 
 }
 
 interface CollectFilesOptions {
+  allowedRoot?: string;
   extension: string;
   strictRootFileExtension: boolean;
   visitedDirectories: Set<string>;
@@ -78,6 +94,10 @@ async function collectFilesWithExtension(
     }
 
     throw error;
+  }
+
+  if (options.allowedRoot && !isWithinPathBoundary(options.allowedRoot, entry.canonicalPath)) {
+    return;
   }
 
   if (entry.kind === "directory") {
@@ -121,9 +141,9 @@ interface PathInspection {
 
 async function inspectPath(targetPath: string): Promise<PathInspection> {
   const entry = await lstat(targetPath);
+  const canonicalPath = await realpath(targetPath);
 
   if (entry.isSymbolicLink()) {
-    const canonicalPath = await realpath(targetPath);
     const resolvedEntry = await stat(targetPath);
 
     return {
@@ -137,7 +157,7 @@ async function inspectPath(targetPath: string): Promise<PathInspection> {
   }
 
   return {
-    canonicalPath: entry.isDirectory() ? await realpath(targetPath) : targetPath,
+    canonicalPath,
     kind: entry.isDirectory() ? "directory" : entry.isFile() ? "file" : "other",
   };
 }
@@ -152,4 +172,12 @@ function hasExtension(targetPath: string, canonicalPath: string, extension: stri
 
 function isMissingPathError(error: unknown): boolean {
   return (error as NodeJS.ErrnoException | undefined)?.code === "ENOENT";
+}
+
+function isWithinPathBoundary(boundaryRoot: string, candidatePath: string): boolean {
+  const relativePath = path.relative(boundaryRoot, candidatePath);
+  return (
+    relativePath === "" ||
+    (!relativePath.startsWith("..") && !path.isAbsolute(relativePath))
+  );
 }
