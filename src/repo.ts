@@ -47,8 +47,10 @@ export async function expandMarkdownTargets(
   for (const targetPath of targetPaths) {
     const resolvedTargetPath = path.resolve(targetPath);
     const matchedFiles = new Set<string>();
+    const rootEntry = await inspectPath(resolvedTargetPath);
 
     await collectFilesWithExtension(resolvedTargetPath, matchedFiles, {
+      allowedRoots: [rootEntry.canonicalPath],
       extension: ".md",
       strictRootFileExtension: true,
       visitedDirectories: new Set<string>(),

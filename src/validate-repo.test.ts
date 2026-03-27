@@ -722,6 +722,63 @@ Body`,
     });
   });
 
+  test("does not follow symlinked directories outside an explicit directory target", async () => {
+    await withTempRepo(async (tempRepo) => {
+      const markdownDir = path.join(tempRepo, "issues");
+      const outsideDir = await mkdtemp(path.join(os.tmpdir(), "markdown-issue-spec-outside-"));
+      const stdout: string[] = [];
+      const stderr: string[] = [];
+
+      try {
+        await mkdir(path.join(tempRepo, "docs", "schemas"), { recursive: true });
+        await mkdir(markdownDir, { recursive: true });
+        await copyFile(
+          path.join(repoRoot, "docs", "schemas", "markdown-frontmatter.schema.json"),
+          path.join(tempRepo, "docs", "schemas", "markdown-frontmatter.schema.json"),
+        );
+        await writeFile(
+          path.join(markdownDir, "ok.md"),
+          `---
+spec_version: mis/0.1
+id: ISSUE-4100
+title: In-scope explicit target
+kind: task
+status: proposed
+created_at: 2026-03-22T10:24:00-05:00
+---
+
+Body`,
+        );
+        await writeFile(
+          path.join(outsideDir, "outside.md"),
+          `---
+spec_version: mis/0.1
+id: ISSUE-4101
+title: Out-of-scope explicit target
+status: proposed
+created_at: 2026-03-22T10:24:00-05:00
+---
+
+Body`,
+        );
+        await symlink(outsideDir, path.join(markdownDir, "linked-outside"));
+
+        const exitCode = await runCli([markdownDir], {
+          repoRoot: tempRepo,
+          cwd: tempRepo,
+          stdout: (line) => stdout.push(line),
+          stderr: (line) => stderr.push(line),
+        });
+
+        expect(exitCode).toBe(0);
+        expect(stderr).toHaveLength(0);
+        expect(stdout.join("\n")).toContain("examples: 1/1 matched expectations");
+      } finally {
+        await rm(outsideDir, { recursive: true, force: true });
+      }
+    });
+  });
+
   test("fails explicit directory validation when no markdown files are found", async () => {
     await withTempRepo(async (tempRepo) => {
       const emptyDir = path.join(tempRepo, "empty");
