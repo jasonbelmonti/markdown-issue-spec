@@ -2,6 +2,7 @@
 
 Documentation lives under `docs/`:
 
+- `docs/task.md`
 - `docs/spec.md`
 - `docs/modeling.md`
 - `docs/profiles/markdown-frontmatter.md`
