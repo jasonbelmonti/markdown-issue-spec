@@ -31,8 +31,9 @@ vault/
   index.sqlite
 server/
   ...
-PLANS/
-  agent-first-mvp.md
+docs/
+  plans/
+    agent-first-mvp.md
 ```
 
 - `vault/issues/` is the only canonical data directory in v1.

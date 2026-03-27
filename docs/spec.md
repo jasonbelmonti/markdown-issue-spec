@@ -333,10 +333,10 @@ This spec does not require Markdown, but it is designed to serialize cleanly int
 Markdown documents with YAML frontmatter.
 
 The first concrete profile for this draft is defined in
-`PROFILES/markdown-frontmatter.md`.
+`docs/profiles/markdown-frontmatter.md`.
 
 A non-normative modeling guide for higher-level planning concepts is provided in
-`MODELING.md`.
+`docs/modeling.md`.
 
 ## 13. Open Questions
 

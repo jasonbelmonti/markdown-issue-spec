@@ -1,5 +1,15 @@
 # markdown-issue-spec
 
+Documentation lives under `docs/`:
+
+- `docs/spec.md`
+- `docs/modeling.md`
+- `docs/profiles/markdown-frontmatter.md`
+- `docs/schemas/markdown-frontmatter.schema.json`
+- `docs/examples/`
+- `docs/fixtures/`
+- `docs/plans/`
+
 To install dependencies:
 
 ```bash
