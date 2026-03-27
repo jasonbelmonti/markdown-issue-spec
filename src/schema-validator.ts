@@ -27,7 +27,12 @@ export function loadSchemaValidator(repoRoot: string): Promise<SchemaValidator> 
 }
 
 async function createSchemaValidator(repoRoot: string): Promise<SchemaValidator> {
-  const schemaPath = path.join(repoRoot, "SCHEMAS", "markdown-frontmatter.schema.json");
+  const schemaPath = path.join(
+    repoRoot,
+    "docs",
+    "schemas",
+    "markdown-frontmatter.schema.json",
+  );
   const schemaSource = await readFile(schemaPath, "utf8");
   const schema = JSON.parse(schemaSource) as object;
 

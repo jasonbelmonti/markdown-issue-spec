@@ -36,10 +36,10 @@ describe("validateRepository", () => {
     const tempRepo = await createTempRepo();
     const markdownPath = path.join(tempRepo, "custom.md");
 
-    await mkdir(path.join(tempRepo, "SCHEMAS"), { recursive: true });
+    await mkdir(path.join(tempRepo, "docs", "schemas"), { recursive: true });
     await copyFile(
-      path.join(repoRoot, "SCHEMAS", "markdown-frontmatter.schema.json"),
-      path.join(tempRepo, "SCHEMAS", "markdown-frontmatter.schema.json"),
+      path.join(repoRoot, "docs", "schemas", "markdown-frontmatter.schema.json"),
+      path.join(tempRepo, "docs", "schemas", "markdown-frontmatter.schema.json"),
     );
     await writeFile(
       markdownPath,
@@ -73,18 +73,18 @@ describe("runCli", () => {
     const stdout: string[] = [];
     const stderr: string[] = [];
 
-    await mkdir(path.join(tempRepo, "SCHEMAS"), { recursive: true });
-    await mkdir(path.join(tempRepo, "fixtures", "valid"), { recursive: true });
-    await mkdir(path.join(tempRepo, "fixtures", "invalid"), { recursive: true });
-    await mkdir(path.join(tempRepo, "EXAMPLES"), { recursive: true });
+    await mkdir(path.join(tempRepo, "docs", "schemas"), { recursive: true });
+    await mkdir(path.join(tempRepo, "docs", "fixtures", "valid"), { recursive: true });
+    await mkdir(path.join(tempRepo, "docs", "fixtures", "invalid"), { recursive: true });
+    await mkdir(path.join(tempRepo, "docs", "examples"), { recursive: true });
 
     await copyFile(
-      path.join(repoRoot, "SCHEMAS", "markdown-frontmatter.schema.json"),
-      path.join(tempRepo, "SCHEMAS", "markdown-frontmatter.schema.json"),
+      path.join(repoRoot, "docs", "schemas", "markdown-frontmatter.schema.json"),
+      path.join(tempRepo, "docs", "schemas", "markdown-frontmatter.schema.json"),
     );
     await copyFile(
-      path.join(repoRoot, "fixtures", "invalid", "non-terminal-with-resolution.json"),
-      path.join(tempRepo, "fixtures", "valid", "non-terminal-with-resolution.json"),
+      path.join(repoRoot, "docs", "fixtures", "invalid", "non-terminal-with-resolution.json"),
+      path.join(tempRepo, "docs", "fixtures", "valid", "non-terminal-with-resolution.json"),
     );
 
     const exitCode = await runCli([], {
@@ -124,7 +124,7 @@ describe("runCli", () => {
   test("accepts a markdown file path and validates only that file", async () => {
     const stdout: string[] = [];
     const stderr: string[] = [];
-    const exitCode = await runCli(["EXAMPLES/basic-issue.md"], {
+    const exitCode = await runCli(["docs/examples/basic-issue.md"], {
       repoRoot,
       cwd: repoRoot,
       stdout: (line) => stdout.push(line),
@@ -139,7 +139,7 @@ describe("runCli", () => {
 
   test("accepts a directory path and validates markdown files recursively", async () => {
     const stdout: string[] = [];
-    const exitCode = await runCli(["EXAMPLES"], {
+    const exitCode = await runCli(["docs/examples"], {
       repoRoot,
       cwd: repoRoot,
       stdout: (line) => stdout.push(line),
@@ -156,11 +156,11 @@ describe("runCli", () => {
     const stdout: string[] = [];
     const stderr: string[] = [];
 
-    await mkdir(path.join(tempRepo, "SCHEMAS"), { recursive: true });
+    await mkdir(path.join(tempRepo, "docs", "schemas"), { recursive: true });
     await mkdir(markdownDir, { recursive: true });
     await copyFile(
-      path.join(repoRoot, "SCHEMAS", "markdown-frontmatter.schema.json"),
-      path.join(tempRepo, "SCHEMAS", "markdown-frontmatter.schema.json"),
+      path.join(repoRoot, "docs", "schemas", "markdown-frontmatter.schema.json"),
+      path.join(tempRepo, "docs", "schemas", "markdown-frontmatter.schema.json"),
     );
     await writeFile(
       path.join(markdownDir, "issue.md"),

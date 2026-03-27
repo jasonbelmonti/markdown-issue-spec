@@ -4,6 +4,16 @@ This repository defines a Markdown-friendly, implementation-independent issue
 tracking spec and ships a Bun-based validator for the Markdown frontmatter
 profile.
 
+Documentation lives under `docs/`:
+
+- `docs/spec.md`
+- `docs/modeling.md`
+- `docs/profiles/markdown-frontmatter.md`
+- `docs/schemas/markdown-frontmatter.schema.json`
+- `docs/examples/`
+- `docs/fixtures/`
+- `docs/plans/`
+
 ## Install
 
 ```bash

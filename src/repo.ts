@@ -17,9 +17,9 @@ export function relativeRepoPath(repoRoot: string, filePath: string): string {
 
 export async function discoverRepoFiles(repoRoot: string): Promise<RepoFiles> {
   return {
-    validFixtures: await listFiles(path.join(repoRoot, "fixtures", "valid"), ".json"),
-    invalidFixtures: await listFiles(path.join(repoRoot, "fixtures", "invalid"), ".json"),
-    examples: await listFiles(path.join(repoRoot, "EXAMPLES"), ".md"),
+    validFixtures: await listFiles(path.join(repoRoot, "docs", "fixtures", "valid"), ".json"),
+    invalidFixtures: await listFiles(path.join(repoRoot, "docs", "fixtures", "invalid"), ".json"),
+    examples: await listFiles(path.join(repoRoot, "docs", "examples"), ".md"),
   };
 }
 
