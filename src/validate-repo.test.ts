@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { runCli } from "./cli.ts";
@@ -64,6 +64,54 @@ Body`,
     expect(result.summary.examples.failed).toBe(0);
     expect(result.summary.validFixtures.total).toBe(0);
     expect(result.summary.invalidFixtures.total).toBe(0);
+  });
+
+  test("discovers nested fixtures and examples recursively", async () => {
+    const tempRepo = await createTempRepo();
+
+    await mkdir(path.join(tempRepo, "docs", "schemas"), { recursive: true });
+    await mkdir(path.join(tempRepo, "docs", "fixtures", "valid", "nested"), {
+      recursive: true,
+    });
+    await mkdir(path.join(tempRepo, "docs", "fixtures", "invalid", "nested"), {
+      recursive: true,
+    });
+    await mkdir(path.join(tempRepo, "docs", "examples", "nested"), {
+      recursive: true,
+    });
+
+    await copyFile(
+      path.join(repoRoot, "docs", "schemas", "markdown-frontmatter.schema.json"),
+      path.join(tempRepo, "docs", "schemas", "markdown-frontmatter.schema.json"),
+    );
+    await copyFile(
+      path.join(repoRoot, "docs", "fixtures", "valid", "basic-frontmatter.json"),
+      path.join(tempRepo, "docs", "fixtures", "valid", "nested", "basic-frontmatter.json"),
+    );
+    await copyFile(
+      path.join(repoRoot, "docs", "fixtures", "invalid", "non-terminal-with-resolution.json"),
+      path.join(
+        tempRepo,
+        "docs",
+        "fixtures",
+        "invalid",
+        "nested",
+        "non-terminal-with-resolution.json",
+      ),
+    );
+    await copyFile(
+      path.join(repoRoot, "docs", "examples", "basic-issue.md"),
+      path.join(tempRepo, "docs", "examples", "nested", "basic-issue.md"),
+    );
+
+    const result = await validateRepository({ repoRoot: tempRepo });
+
+    expect(result.summary.validFixtures.total).toBe(1);
+    expect(result.summary.validFixtures.failed).toBe(0);
+    expect(result.summary.invalidFixtures.total).toBe(1);
+    expect(result.summary.invalidFixtures.failed).toBe(0);
+    expect(result.summary.examples.total).toBe(1);
+    expect(result.summary.examples.failed).toBe(0);
   });
 });
 
@@ -203,6 +251,46 @@ Body`,
     expect(stdout).toHaveLength(0);
     expect(stderr.join("\n")).toContain("ENOENT");
     expect(stderr.join("\n")).not.toContain("at runCli");
+  });
+
+  test("avoids symlink directory loops while scanning explicit targets", async () => {
+    const tempRepo = await createTempRepo();
+    const markdownDir = path.join(tempRepo, "issues");
+    const nestedDir = path.join(markdownDir, "nested");
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+
+    await mkdir(path.join(tempRepo, "docs", "schemas"), { recursive: true });
+    await mkdir(nestedDir, { recursive: true });
+    await copyFile(
+      path.join(repoRoot, "docs", "schemas", "markdown-frontmatter.schema.json"),
+      path.join(tempRepo, "docs", "schemas", "markdown-frontmatter.schema.json"),
+    );
+    await writeFile(
+      path.join(nestedDir, "issue.md"),
+      `---
+spec_version: mis/0.1
+id: ISSUE-3000
+title: Symlink loop target
+kind: task
+status: proposed
+created_at: 2026-03-22T10:24:00-05:00
+---
+
+Body`,
+    );
+    await symlink(markdownDir, path.join(nestedDir, "loop"));
+
+    const exitCode = await runCli([markdownDir], {
+      repoRoot: tempRepo,
+      cwd: tempRepo,
+      stdout: (line) => stdout.push(line),
+      stderr: (line) => stderr.push(line),
+    });
+
+    expect(exitCode).toBe(0);
+    expect(stderr).toHaveLength(0);
+    expect(stdout.join("\n")).toContain("examples: 1/1 matched expectations");
   });
 });
 
