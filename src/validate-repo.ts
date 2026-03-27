@@ -20,6 +20,10 @@ export async function validateRepository(
 
   if (markdownPaths.length > 0) {
     const files = await expandMarkdownTargets(markdownPaths);
+    ensureTargetsFound(
+      files.length,
+      "No Markdown files matched the provided path arguments.",
+    );
 
     results.push(
       ...(await Promise.all(
@@ -43,6 +47,10 @@ export async function validateRepository(
   }
 
   const files = await discoverRepoFiles(repoRoot);
+  ensureTargetsFound(
+    countSelectedRepoTargets(files, options),
+    buildEmptyRepoTargetsMessage(options),
+  );
 
   if (!options.examplesOnly) {
     results.push(
@@ -183,4 +191,33 @@ function formatThrownError(error: unknown): string {
   }
 
   return String(error);
+}
+
+function countSelectedRepoTargets(
+  files: { validFixtures: string[]; invalidFixtures: string[]; examples: string[] },
+  options: ValidateRepositoryOptions,
+): number {
+  const fixtureCount = options.examplesOnly
+    ? 0
+    : files.validFixtures.length + files.invalidFixtures.length;
+  const exampleCount = options.fixturesOnly ? 0 : files.examples.length;
+  return fixtureCount + exampleCount;
+}
+
+function buildEmptyRepoTargetsMessage(options: ValidateRepositoryOptions): string {
+  if (options.fixturesOnly) {
+    return "No fixture files were found under docs/fixtures for the selected scope.";
+  }
+
+  if (options.examplesOnly) {
+    return "No Markdown example files were found under docs/examples for the selected scope.";
+  }
+
+  return "No validation targets were found under docs/fixtures or docs/examples.";
+}
+
+function ensureTargetsFound(totalTargets: number, message: string): void {
+  if (totalTargets === 0) {
+    throw new Error(message);
+  }
 }
