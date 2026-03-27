@@ -8,7 +8,7 @@ This document shows how to model common planning and grouping concepts using the
 existing primitives in `mis/0.1` without making those concepts first-class core
 spec features.
 
-Nothing in this guide changes conformance requirements in `SPEC.md`. It is a set
+Nothing in this guide changes conformance requirements in `docs/spec.md`. It is a set
 of patterns and tradeoffs for implementers and authors who want interoperable
 ways to represent project-like organization.
 

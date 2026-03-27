@@ -4,7 +4,7 @@ Status: Draft 0.1 profile for `mis/0.1`
 
 ## 1. Scope
 
-This profile defines how the abstract model in `SPEC.md` maps onto a single
+This profile defines how the abstract model in `docs/spec.md` maps onto a single
 Markdown document with YAML frontmatter.
 
 This profile is intentionally conservative:
@@ -176,7 +176,7 @@ SHOULD round-trip canonical values without semantic loss.
 ## 8. JSON Schema
 
 The parsed YAML frontmatter for this profile is validated by
-`SCHEMAS/markdown-frontmatter.schema.json`, which targets JSON Schema draft
+`docs/schemas/markdown-frontmatter.schema.json`, which targets JSON Schema draft
 2020-12.
 
 The schema is intentionally strict at the top level:
@@ -200,5 +200,5 @@ The schema does not validate:
 - dependency cycles or `parent` graph cycles
 - repository, vault, or graph-wide resolution of referenced issues
 
-Example parsed-frontmatter fixtures live under `fixtures/valid/` and
-`fixtures/invalid/`.
+Example parsed-frontmatter fixtures live under `docs/fixtures/valid/` and
+`docs/fixtures/invalid/`.
