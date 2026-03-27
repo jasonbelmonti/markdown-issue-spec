@@ -68,7 +68,17 @@ async function collectFilesWithExtension(
   matchedFiles: Set<string>,
   options: CollectFilesOptions,
 ): Promise<void> {
-  const entry = await inspectPath(targetPath);
+  let entry;
+
+  try {
+    entry = await inspectPath(targetPath);
+  } catch (error) {
+    if (isMissingPathError(error) && !options.strictRootFileExtension) {
+      return;
+    }
+
+    throw error;
+  }
 
   if (entry.kind === "directory") {
     if (options.visitedDirectories.has(entry.canonicalPath)) {
@@ -138,4 +148,8 @@ function hasExtension(targetPath: string, canonicalPath: string, extension: stri
     targetPath.toLowerCase().endsWith(normalizedExtension) ||
     canonicalPath.toLowerCase().endsWith(normalizedExtension)
   );
+}
+
+function isMissingPathError(error: unknown): boolean {
+  return (error as NodeJS.ErrnoException | undefined)?.code === "ENOENT";
 }

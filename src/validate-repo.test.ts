@@ -321,6 +321,49 @@ Body`,
     });
   });
 
+  test("ignores broken symlinks during repo-scope example discovery when valid siblings exist", async () => {
+    await withTempRepo(async (tempRepo) => {
+      const stdout: string[] = [];
+      const stderr: string[] = [];
+      const examplesDir = path.join(tempRepo, "docs", "examples");
+
+      await mkdir(path.join(tempRepo, "docs", "schemas"), { recursive: true });
+      await mkdir(examplesDir, { recursive: true });
+      await copyFile(
+        path.join(repoRoot, "docs", "schemas", "markdown-frontmatter.schema.json"),
+        path.join(tempRepo, "docs", "schemas", "markdown-frontmatter.schema.json"),
+      );
+      await writeFile(
+        path.join(examplesDir, "ok.md"),
+        `---
+spec_version: mis/0.1
+id: ISSUE-4000
+title: Valid sibling example
+kind: task
+status: proposed
+created_at: 2026-03-22T10:24:00-05:00
+---
+
+Body`,
+      );
+      await symlink(
+        path.join(tempRepo, "missing.md"),
+        path.join(examplesDir, "broken-link.md"),
+      );
+
+      const exitCode = await runCli(["--examples-only"], {
+        repoRoot: tempRepo,
+        cwd: tempRepo,
+        stdout: (line) => stdout.push(line),
+        stderr: (line) => stderr.push(line),
+      });
+
+      expect(exitCode).toBe(0);
+      expect(stderr).toHaveLength(0);
+      expect(stdout.join("\n")).toContain("examples: 1/1 matched expectations");
+    });
+  });
+
   test("reports missing paths without a stack trace", async () => {
     const stdout: string[] = [];
     const stderr: string[] = [];
@@ -388,6 +431,49 @@ created_at: 2026-03-22T10:24:00-05:00
 Body`,
       );
       await symlink(markdownDir, path.join(nestedDir, "loop"));
+
+      const exitCode = await runCli([markdownDir], {
+        repoRoot: tempRepo,
+        cwd: tempRepo,
+        stdout: (line) => stdout.push(line),
+        stderr: (line) => stderr.push(line),
+      });
+
+      expect(exitCode).toBe(0);
+      expect(stderr).toHaveLength(0);
+      expect(stdout.join("\n")).toContain("examples: 1/1 matched expectations");
+    });
+  });
+
+  test("ignores broken symlinks during explicit directory validation when valid siblings exist", async () => {
+    await withTempRepo(async (tempRepo) => {
+      const markdownDir = path.join(tempRepo, "issues");
+      const stdout: string[] = [];
+      const stderr: string[] = [];
+
+      await mkdir(path.join(tempRepo, "docs", "schemas"), { recursive: true });
+      await mkdir(markdownDir, { recursive: true });
+      await copyFile(
+        path.join(repoRoot, "docs", "schemas", "markdown-frontmatter.schema.json"),
+        path.join(tempRepo, "docs", "schemas", "markdown-frontmatter.schema.json"),
+      );
+      await writeFile(
+        path.join(markdownDir, "ok.md"),
+        `---
+spec_version: mis/0.1
+id: ISSUE-4001
+title: Valid explicit sibling
+kind: task
+status: proposed
+created_at: 2026-03-22T10:24:00-05:00
+---
+
+Body`,
+      );
+      await symlink(
+        path.join(tempRepo, "missing.md"),
+        path.join(markdownDir, "broken-link.md"),
+      );
 
       const exitCode = await runCli([markdownDir], {
         repoRoot: tempRepo,
