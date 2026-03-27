@@ -253,6 +253,100 @@ Body`,
       }
     });
   });
+
+  test("does not follow symlinked directories outside docs/examples even when they stay inside the repo", async () => {
+    await withTempRepo(async (tempRepo) => {
+      const repoSharedDir = path.join(tempRepo, "shared");
+
+      await mkdir(path.join(tempRepo, "docs", "schemas"), { recursive: true });
+      await mkdir(path.join(tempRepo, "docs", "examples"), { recursive: true });
+      await mkdir(repoSharedDir, { recursive: true });
+      await copyFile(
+        path.join(repoRoot, "docs", "schemas", "markdown-frontmatter.schema.json"),
+        path.join(tempRepo, "docs", "schemas", "markdown-frontmatter.schema.json"),
+      );
+      await writeFile(
+        path.join(tempRepo, "docs", "examples", "ok.md"),
+        `---
+spec_version: mis/0.1
+id: ISSUE-1202
+title: In-scope example
+kind: task
+status: proposed
+created_at: 2026-03-22T10:24:00-05:00
+---
+
+Body`,
+      );
+      await writeFile(
+        path.join(repoSharedDir, "shared.md"),
+        `---
+spec_version: mis/0.1
+id: ISSUE-1203
+title: Shared example
+kind: task
+status: proposed
+created_at: 2026-03-22T10:24:00-05:00
+---
+
+Body`,
+      );
+      await symlink(repoSharedDir, path.join(tempRepo, "docs", "examples", "linked-shared"));
+
+      const result = await validateRepository({
+        repoRoot: tempRepo,
+        examplesOnly: true,
+      });
+
+      expect(result.summary.examples.total).toBe(1);
+      expect(result.summary.examples.failed).toBe(0);
+      expect(result.results.map((entry) => entry.filePath)).toEqual([
+        path.join(tempRepo, "docs", "examples", "ok.md"),
+      ]);
+    });
+  });
+
+  test("does not follow symlinked fixture directories outside docs/fixtures/valid even when they stay inside the repo", async () => {
+    await withTempRepo(async (tempRepo) => {
+      const repoSharedDir = path.join(tempRepo, "shared");
+
+      await mkdir(path.join(tempRepo, "docs", "schemas"), { recursive: true });
+      await mkdir(path.join(tempRepo, "docs", "fixtures", "valid"), { recursive: true });
+      await mkdir(path.join(tempRepo, "docs", "fixtures", "invalid"), { recursive: true });
+      await mkdir(repoSharedDir, { recursive: true });
+      await copyFile(
+        path.join(repoRoot, "docs", "schemas", "markdown-frontmatter.schema.json"),
+        path.join(tempRepo, "docs", "schemas", "markdown-frontmatter.schema.json"),
+      );
+      await copyFile(
+        path.join(repoRoot, "docs", "fixtures", "valid", "basic-frontmatter.json"),
+        path.join(tempRepo, "docs", "fixtures", "valid", "basic-frontmatter.json"),
+      );
+      await copyFile(
+        path.join(repoRoot, "docs", "fixtures", "invalid", "non-terminal-with-resolution.json"),
+        path.join(tempRepo, "docs", "fixtures", "invalid", "non-terminal-with-resolution.json"),
+      );
+      await copyFile(
+        path.join(repoRoot, "docs", "fixtures", "valid", "basic-frontmatter.json"),
+        path.join(repoSharedDir, "shared.json"),
+      );
+      await symlink(repoSharedDir, path.join(tempRepo, "docs", "fixtures", "valid", "linked"));
+
+      const result = await validateRepository({
+        repoRoot: tempRepo,
+        fixturesOnly: true,
+      });
+
+      expect(result.summary.validFixtures.total).toBe(1);
+      expect(result.summary.validFixtures.failed).toBe(0);
+      expect(result.summary.invalidFixtures.total).toBe(1);
+      expect(result.summary.invalidFixtures.failed).toBe(0);
+      expect(result.results.map((entry) => entry.filePath)).toEqual([
+        path.join(tempRepo, "docs", "fixtures", "valid", "basic-frontmatter.json"),
+        path.join(tempRepo, "docs", "fixtures", "invalid", "non-terminal-with-resolution.json"),
+      ]);
+    });
+  });
 });
 
 describe.serial("runCli", () => {
@@ -273,6 +367,20 @@ describe.serial("runCli", () => {
       await copyFile(
         path.join(repoRoot, "docs", "fixtures", "invalid", "non-terminal-with-resolution.json"),
         path.join(tempRepo, "docs", "fixtures", "valid", "non-terminal-with-resolution.json"),
+      );
+      await copyFile(
+        path.join(repoRoot, "docs", "fixtures", "invalid", "non-terminal-with-resolution.json"),
+        path.join(
+          tempRepo,
+          "docs",
+          "fixtures",
+          "invalid",
+          "non-terminal-with-resolution.json",
+        ),
+      );
+      await copyFile(
+        path.join(repoRoot, "docs", "examples", "basic-issue.md"),
+        path.join(tempRepo, "docs", "examples", "basic-issue.md"),
       );
 
       const exitCode = await runCli([], {
@@ -458,7 +566,75 @@ Body`,
 
       expect(exitCode).toBe(1);
       expect(stdout).toHaveLength(0);
-      expect(stderr.join("\n")).toContain("No validation targets were found");
+      expect(stderr.join("\n")).toContain(
+        "Expected validation targets were missing for the selected repo scope",
+      );
+      expect(stderr.join("\n")).toContain("docs/fixtures/valid");
+      expect(stderr.join("\n")).toContain("docs/fixtures/invalid");
+      expect(stderr.join("\n")).toContain("docs/examples");
+    });
+  });
+
+  test("fails repo validation when docs/examples is missing from the default scope", async () => {
+    await withTempRepo(async (tempRepo) => {
+      const stdout: string[] = [];
+      const stderr: string[] = [];
+
+      await mkdir(path.join(tempRepo, "docs", "schemas"), { recursive: true });
+      await mkdir(path.join(tempRepo, "docs", "fixtures", "valid"), { recursive: true });
+      await mkdir(path.join(tempRepo, "docs", "fixtures", "invalid"), { recursive: true });
+      await copyFile(
+        path.join(repoRoot, "docs", "schemas", "markdown-frontmatter.schema.json"),
+        path.join(tempRepo, "docs", "schemas", "markdown-frontmatter.schema.json"),
+      );
+      await copyFile(
+        path.join(repoRoot, "docs", "fixtures", "valid", "basic-frontmatter.json"),
+        path.join(tempRepo, "docs", "fixtures", "valid", "basic-frontmatter.json"),
+      );
+      await copyFile(
+        path.join(repoRoot, "docs", "fixtures", "invalid", "non-terminal-with-resolution.json"),
+        path.join(tempRepo, "docs", "fixtures", "invalid", "non-terminal-with-resolution.json"),
+      );
+
+      const exitCode = await runCli([], {
+        repoRoot: tempRepo,
+        cwd: tempRepo,
+        stdout: (line) => stdout.push(line),
+        stderr: (line) => stderr.push(line),
+      });
+
+      expect(exitCode).toBe(1);
+      expect(stdout).toHaveLength(0);
+      expect(stderr.join("\n")).toContain("docs/examples");
+    });
+  });
+
+  test("fails repo validation when one fixture surface is missing from fixtures-only scope", async () => {
+    await withTempRepo(async (tempRepo) => {
+      const stdout: string[] = [];
+      const stderr: string[] = [];
+
+      await mkdir(path.join(tempRepo, "docs", "schemas"), { recursive: true });
+      await mkdir(path.join(tempRepo, "docs", "fixtures", "valid"), { recursive: true });
+      await copyFile(
+        path.join(repoRoot, "docs", "schemas", "markdown-frontmatter.schema.json"),
+        path.join(tempRepo, "docs", "schemas", "markdown-frontmatter.schema.json"),
+      );
+      await copyFile(
+        path.join(repoRoot, "docs", "fixtures", "valid", "basic-frontmatter.json"),
+        path.join(tempRepo, "docs", "fixtures", "valid", "basic-frontmatter.json"),
+      );
+
+      const exitCode = await runCli(["--fixtures-only"], {
+        repoRoot: tempRepo,
+        cwd: tempRepo,
+        stdout: (line) => stdout.push(line),
+        stderr: (line) => stderr.push(line),
+      });
+
+      expect(exitCode).toBe(1);
+      expect(stdout).toHaveLength(0);
+      expect(stderr.join("\n")).toContain("docs/fixtures/invalid");
     });
   });
 

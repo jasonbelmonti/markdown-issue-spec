@@ -73,16 +73,12 @@ export async function expandMarkdownTargets(
 async function findFiles(
   dirPath: string,
   extension: string,
-  allowedRoot?: string,
+  repoRoot?: string,
 ): Promise<string[]> {
-  const matchedFiles = new Set<string>();
+  let rootEntry;
+
   try {
-    await collectFilesWithExtension(dirPath, matchedFiles, {
-      allowedRoot,
-      extension,
-      strictRootFileExtension: false,
-      visitedDirectories: new Set<string>(),
-    });
+    rootEntry = await inspectPath(dirPath);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
       return [];
@@ -91,11 +87,25 @@ async function findFiles(
     throw error;
   }
 
+  if (rootEntry.kind !== "directory") {
+    return [];
+  }
+
+  const matchedFiles = new Set<string>();
+  await collectFilesWithExtension(dirPath, matchedFiles, {
+    allowedRoots: [rootEntry.canonicalPath, repoRoot].filter(
+      (value): value is string => value !== undefined,
+    ),
+    extension,
+    strictRootFileExtension: false,
+    visitedDirectories: new Set<string>(),
+  });
+
   return Array.from(matchedFiles).sort((left, right) => left.localeCompare(right));
 }
 
 interface CollectFilesOptions {
-  allowedRoot?: string;
+  allowedRoots?: string[];
   extension: string;
   strictRootFileExtension: boolean;
   visitedDirectories: Set<string>;
@@ -118,7 +128,7 @@ async function collectFilesWithExtension(
     throw error;
   }
 
-  if (options.allowedRoot && !isWithinPathBoundary(options.allowedRoot, entry.canonicalPath)) {
+  if (!isWithinPathBoundaries(options.allowedRoots, entry.canonicalPath)) {
     return;
   }
 
@@ -194,6 +204,15 @@ function hasExtension(targetPath: string, canonicalPath: string, extension: stri
 
 function isMissingPathError(error: unknown): boolean {
   return (error as NodeJS.ErrnoException | undefined)?.code === "ENOENT";
+}
+
+function isWithinPathBoundaries(
+  boundaryRoots: string[] | undefined,
+  candidatePath: string,
+): boolean {
+  return boundaryRoots?.every((boundaryRoot) =>
+    isWithinPathBoundary(boundaryRoot, candidatePath),
+  ) ?? true;
 }
 
 function isWithinPathBoundary(boundaryRoot: string, candidatePath: string): boolean {

@@ -46,10 +46,7 @@ export async function validateRepository(
   }
 
   const files = await discoverRepoFiles(repoRoot);
-  ensureTargetsFound(
-    countSelectedRepoTargets(files, options),
-    buildEmptyRepoTargetsMessage(options),
-  );
+  ensureSelectedRepoTargetsPresent(files, options);
 
   if (!options.examplesOnly) {
     results.push(
@@ -192,33 +189,44 @@ function formatThrownError(error: unknown): string {
   return String(error);
 }
 
-function countSelectedRepoTargets(
+function collectMissingRepoTargets(
   files: { validFixtures: string[]; invalidFixtures: string[]; examples: string[] },
   options: ValidateRepositoryOptions,
-): number {
-  const fixtureCount = options.examplesOnly
-    ? 0
-    : files.validFixtures.length + files.invalidFixtures.length;
-  const exampleCount = options.fixturesOnly ? 0 : files.examples.length;
-  return fixtureCount + exampleCount;
+): string[] {
+  const missingTargets: string[] = [];
+
+  if (!options.examplesOnly) {
+    if (files.validFixtures.length === 0) {
+      missingTargets.push("docs/fixtures/valid");
+    }
+
+    if (files.invalidFixtures.length === 0) {
+      missingTargets.push("docs/fixtures/invalid");
+    }
+  }
+
+  if (!options.fixturesOnly && files.examples.length === 0) {
+    missingTargets.push("docs/examples");
+  }
+
+  return missingTargets;
 }
 
-function buildEmptyRepoTargetsMessage(options: ValidateRepositoryOptions): string {
-  if (options.fixturesOnly) {
-    return "No fixture files were found under docs/fixtures for the selected scope.";
+function ensureSelectedRepoTargetsPresent(
+  files: { validFixtures: string[]; invalidFixtures: string[]; examples: string[] },
+  options: ValidateRepositoryOptions,
+): void {
+  const missingTargets = collectMissingRepoTargets(files, options);
+
+  if (missingTargets.length === 0) {
+    return;
   }
 
-  if (options.examplesOnly) {
-    return "No Markdown example files were found under docs/examples for the selected scope.";
-  }
-
-  return "No validation targets were found under docs/fixtures or docs/examples.";
-}
-
-function ensureTargetsFound(totalTargets: number, message: string): void {
-  if (totalTargets === 0) {
-    throw new Error(message);
-  }
+  throw new Error(
+    `Expected validation targets were missing for the selected repo scope: ${missingTargets.join(
+      ", ",
+    )}`,
+  );
 }
 
 function ensureAllExplicitTargetsMatched(unmatchedTargets: string[]): void {
