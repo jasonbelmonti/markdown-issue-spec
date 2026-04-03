@@ -16,7 +16,12 @@ export type {
   TerminalIssueStatus,
 } from "./issue.ts";
 export type {
+  CoreIssueRelation,
+  CustomIssueRelation,
+  DependencyIssueLink,
   DependencyRequiredBefore,
   IssueLink,
   IssueRef,
+  NonDependencyIssueLink,
+  NonDependencyIssueRelation,
 } from "./link.ts";
