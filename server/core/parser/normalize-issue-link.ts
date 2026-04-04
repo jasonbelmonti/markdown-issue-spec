@@ -42,6 +42,15 @@ function readRequiredBefore(
   return value as DependencyRequiredBefore;
 }
 
+function assertRequiredBeforeUsage(
+  record: Record<string, unknown>,
+  rel: string,
+): void {
+  if (rel !== "depends_on" && "required_before" in record) {
+    throw new Error("Only `depends_on` links may declare `required_before`.");
+  }
+}
+
 export function normalizeIssueRef(target: unknown): IssueRef {
   if (typeof target === "string") {
     return { id: target };
@@ -72,6 +81,8 @@ export function normalizeIssueLink(link: unknown): IssueLink {
   const target = normalizeIssueRef(link.target);
   const note = readOptionalString(link, "note");
   const extensions = readOptionalExtensionMap(link, "extensions");
+
+  assertRequiredBeforeUsage(link, rel);
 
   if (rel === "depends_on") {
     const dependencyLink: DependencyIssueLink = {

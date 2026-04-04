@@ -117,6 +117,22 @@ function assertNonTerminalStatusHasNoResolution(
   }
 }
 
+function assertNoForbiddenFrontmatterFields(
+  record: Record<string, unknown>,
+): void {
+  if ("body" in record) {
+    throw new Error(
+      "Markdown frontmatter must not declare `body`; use the Markdown document body instead.",
+    );
+  }
+
+  if ("description" in record) {
+    throw new Error(
+      "Markdown frontmatter must not declare `description`; use the Markdown document body instead.",
+    );
+  }
+}
+
 function buildIssueBase(
   frontmatter: Record<string, unknown>,
   body?: string,
@@ -175,6 +191,8 @@ function buildIssueBase(
 export function parseIssueFromMarkdownDocument(
   document: ParsedMarkdownFrontmatterDocument,
 ): Issue {
+  assertNoForbiddenFrontmatterFields(document.frontmatter);
+
   const status = readStatus(document.frontmatter);
   const issueBase = buildIssueBase(document.frontmatter, document.body);
 

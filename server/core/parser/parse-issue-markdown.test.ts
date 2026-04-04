@@ -165,7 +165,6 @@ title: Prefer the actual Markdown body
 kind: task
 status: proposed
 created_at: 2026-03-22T10:24:00-05:00
-body: this key is profile-invalid and should not become canonical body
 ---
 
 ## Objective
@@ -173,16 +172,59 @@ body: this key is profile-invalid and should not become canonical body
 The document body wins.
 `;
 
-  const rawDocument = parseMarkdownFrontmatterDocument(source);
   const issue = parseIssueMarkdown(source);
 
-  expect(rawDocument.frontmatter.body).toBe(
-    "this key is profile-invalid and should not become canonical body",
-  );
   expect(issue.body).toBe(`## Objective
 
 The document body wins.
 `);
+});
+
+test("parseIssueMarkdown rejects profile-invalid frontmatter body keys", () => {
+  const source = `---
+spec_version: mis/0.1
+id: ISSUE-0104
+title: Reject frontmatter body
+kind: task
+status: proposed
+created_at: 2026-03-22T10:24:00-05:00
+body: this key is forbidden for the markdown frontmatter profile
+---
+
+## Objective
+
+Use the Markdown body instead.
+`;
+
+  const rawDocument = parseMarkdownFrontmatterDocument(source);
+
+  expect(rawDocument.frontmatter.body).toBe(
+    "this key is forbidden for the markdown frontmatter profile",
+  );
+  expect(() => parseIssueMarkdown(source)).toThrow(
+    "Markdown frontmatter must not declare `body`; use the Markdown document body instead.",
+  );
+});
+
+test("parseIssueMarkdown rejects profile-invalid frontmatter description keys", () => {
+  const source = `---
+spec_version: mis/0.1
+id: ISSUE-0105
+title: Reject frontmatter description
+kind: task
+status: proposed
+created_at: 2026-03-22T10:24:00-05:00
+description: this key is also forbidden for the markdown frontmatter profile
+---
+
+## Objective
+
+Use the Markdown body instead.
+`;
+
+  expect(() => parseIssueMarkdown(source)).toThrow(
+    "Markdown frontmatter must not declare `description`; use the Markdown document body instead.",
+  );
 });
 
 test("parseIssueMarkdown preserves verbose target locator hints", () => {
@@ -259,6 +301,30 @@ Retain namespaced relation data.
   expect(issue.links?.[0]?.extensions).toEqual({
     "acme/gate": "schema-stability",
   });
+});
+
+test("parseIssueMarkdown rejects required_before on non-dependency links", () => {
+  const source = `---
+spec_version: mis/0.1
+id: ISSUE-0106
+title: Reject invalid link gating
+kind: task
+status: accepted
+created_at: 2026-03-22T10:24:00-05:00
+links:
+  - rel: references
+    target: ISSUE-0002
+    required_before: completed
+---
+
+## Objective
+
+Do not silently drop invalid dependency-only fields.
+`;
+
+  expect(() => parseIssueMarkdown(source)).toThrow(
+    "Failed to normalize link at index 0: Only `depends_on` links may declare `required_before`.",
+  );
 });
 
 test("parseMarkdownFrontmatterDocument parses YAML without relying on Bun.YAML", () => {
