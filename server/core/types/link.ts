@@ -9,16 +9,15 @@ export type CoreIssueRelation =
   | "related_to"
   | "references";
 
-// Custom relation names are modeled as namespaced strings so they stay distinct
-// from the core vocabulary while still leaving room for extensions.
-export type CustomIssueRelation =
-  | `${string}/${string}`
-  | `${string}:${string}`
-  | `${string}.${string}`;
+// mis/0.1 recommends namespacing custom relations, but it does not require it.
+// Keep the custom side fully open so parser/validator code can represent any
+// spec-valid input, including legacy or local relation labels.
+export type CustomIssueRelation = string;
 
-export type NonDependencyIssueRelation =
-  | Exclude<CoreIssueRelation, "depends_on">
-  | CustomIssueRelation;
+export type NonDependencyCoreIssueRelation = Exclude<
+  CoreIssueRelation,
+  "depends_on"
+>;
 
 export interface IssueRef {
   id: string;
@@ -38,9 +37,18 @@ export interface DependencyIssueLink extends IssueLinkBase {
   required_before: DependencyRequiredBefore;
 }
 
-export interface NonDependencyIssueLink extends IssueLinkBase {
-  rel: NonDependencyIssueRelation;
+export interface NonDependencyCoreIssueLink extends IssueLinkBase {
+  rel: NonDependencyCoreIssueRelation;
   required_before?: never;
 }
 
-export type IssueLink = DependencyIssueLink | NonDependencyIssueLink;
+// TypeScript cannot precisely model "any string except depends_on", so custom
+// relations remain open here while the core relation union stays strict.
+export interface CustomIssueLink extends IssueLinkBase {
+  rel: CustomIssueRelation;
+  required_before?: never;
+}
+
+export type CoreIssueLink = DependencyIssueLink | NonDependencyCoreIssueLink;
+
+export type IssueLink = CoreIssueLink | CustomIssueLink;
