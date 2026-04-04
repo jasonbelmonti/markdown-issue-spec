@@ -1,3 +1,5 @@
+import { parse as parseYaml } from "yaml";
+
 import { isPlainObject } from "./record-helpers.ts";
 
 export interface SplitMarkdownFrontmatterResult {
@@ -47,7 +49,7 @@ export function parseMarkdownFrontmatterDocument(
   let frontmatter: unknown;
 
   try {
-    frontmatter = Bun.YAML.parse(frontmatterSource);
+    frontmatter = parseYaml(frontmatterSource);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(`Failed to parse YAML frontmatter: ${message}`);

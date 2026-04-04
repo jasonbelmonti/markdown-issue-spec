@@ -106,6 +106,17 @@ function readCanceledResolution(
   return resolution;
 }
 
+function assertNonTerminalStatusHasNoResolution(
+  record: Record<string, unknown>,
+  status: Exclude<IssueStatus, "completed" | "canceled">,
+): void {
+  if ("resolution" in record) {
+    throw new Error(
+      `Non-terminal issues with status \`${status}\` must not declare \`resolution\`.`,
+    );
+  }
+}
+
 function buildIssueBase(
   frontmatter: Record<string, unknown>,
   body?: string,
@@ -182,6 +193,8 @@ export function parseIssueFromMarkdownDocument(
       resolution: readCanceledResolution(document.frontmatter),
     };
   }
+
+  assertNonTerminalStatusHasNoResolution(document.frontmatter, status);
 
   return {
     ...issueBase,

@@ -260,3 +260,49 @@ Retain namespaced relation data.
     "acme/gate": "schema-stability",
   });
 });
+
+test("parseMarkdownFrontmatterDocument parses YAML without relying on Bun.YAML", () => {
+  const document = parseMarkdownFrontmatterDocument(`---
+spec_version: mis/0.1
+id: ISSUE-0102
+title: Parse with supported YAML dependency
+kind: task
+status: proposed
+created_at: 2026-03-22T10:24:00-05:00
+labels:
+  - parser
+  - compatibility
+---
+
+## Objective
+
+Keep frontmatter parsing runtime-compatible.
+`);
+
+  expect(document.frontmatter).toMatchObject({
+    spec_version: "mis/0.1",
+    id: "ISSUE-0102",
+    labels: ["parser", "compatibility"],
+  });
+});
+
+test("parseIssueMarkdown rejects resolution on non-terminal issues", () => {
+  const source = `---
+spec_version: mis/0.1
+id: ISSUE-0103
+title: Reject non-terminal resolutions
+kind: task
+status: accepted
+resolution: done
+created_at: 2026-03-22T10:24:00-05:00
+---
+
+## Objective
+
+Resolution should not be silently dropped.
+`;
+
+  expect(() => parseIssueMarkdown(source)).toThrow(
+    "Non-terminal issues with status `accepted` must not declare `resolution`.",
+  );
+});
