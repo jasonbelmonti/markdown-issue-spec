@@ -13,7 +13,7 @@ export interface ParsedMarkdownFrontmatterDocument {
 }
 
 const FRONTMATTER_PATTERN =
-  /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/;
+  /^\uFEFF?---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/;
 
 export function splitMarkdownFrontmatter(
   source: string,

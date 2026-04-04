@@ -4,6 +4,14 @@ export function isPlainObject(value: unknown): value is Record<string, unknown> 
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+export function assertNonEmptyString(value: string, context: string): string {
+  if (value.length === 0) {
+    throw new Error(`Expected ${context} to be a non-empty string.`);
+  }
+
+  return value;
+}
+
 export function readRequiredString(
   record: Record<string, unknown>,
   key: string,
@@ -14,7 +22,7 @@ export function readRequiredString(
     throw new Error(`Expected \`${key}\` to be a string.`);
   }
 
-  return value;
+  return assertNonEmptyString(value, `\`${key}\``);
 }
 
 export function readOptionalString(

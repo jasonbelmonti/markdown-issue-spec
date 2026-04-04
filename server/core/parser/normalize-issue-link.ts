@@ -13,6 +13,7 @@ import {
   isCustomIssueRelation,
 } from "../types/index.ts";
 import {
+  assertNonEmptyString,
   isPlainObject,
   readOptionalExtensionMap,
   readOptionalString,
@@ -53,7 +54,7 @@ function assertRequiredBeforeUsage(
 
 export function normalizeIssueRef(target: unknown): IssueRef {
   if (typeof target === "string") {
-    return { id: target };
+    return { id: assertNonEmptyString(target, "shorthand link `target`") };
   }
 
   if (!isPlainObject(target)) {

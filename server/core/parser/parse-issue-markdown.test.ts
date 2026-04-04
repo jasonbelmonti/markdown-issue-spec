@@ -227,6 +227,26 @@ Use the Markdown body instead.
   );
 });
 
+test("parseIssueMarkdown rejects empty required string fields", () => {
+  const source = `---
+spec_version: mis/0.1
+id: ""
+title: Valid title
+kind: task
+status: proposed
+created_at: 2026-03-22T10:24:00-05:00
+---
+
+## Objective
+
+Required canonical identifiers must not be empty.
+`;
+
+  expect(() => parseIssueMarkdown(source)).toThrow(
+    "Expected `id` to be a non-empty string.",
+  );
+});
+
 test("parseIssueMarkdown preserves verbose target locator hints", () => {
   const source = `---
 spec_version: mis/0.1
@@ -327,6 +347,29 @@ Do not silently drop invalid dependency-only fields.
   );
 });
 
+test("parseIssueMarkdown rejects empty shorthand target IDs", () => {
+  const source = `---
+spec_version: mis/0.1
+id: ISSUE-0107
+title: Reject empty shorthand target
+kind: task
+status: accepted
+created_at: 2026-03-22T10:24:00-05:00
+links:
+  - rel: references
+    target: ""
+---
+
+## Objective
+
+Shorthand target IDs must not be empty.
+`;
+
+  expect(() => parseIssueMarkdown(source)).toThrow(
+    "Failed to normalize link at index 0: Expected shorthand link `target` to be a non-empty string.",
+  );
+});
+
 test("parseMarkdownFrontmatterDocument parses YAML without relying on Bun.YAML", () => {
   const document = parseMarkdownFrontmatterDocument(`---
 spec_version: mis/0.1
@@ -350,6 +393,31 @@ Keep frontmatter parsing runtime-compatible.
     id: "ISSUE-0102",
     labels: ["parser", "compatibility"],
   });
+});
+
+test("parseMarkdownFrontmatterDocument accepts an optional UTF-8 BOM", () => {
+  const document = parseMarkdownFrontmatterDocument(`\uFEFF---
+spec_version: mis/0.1
+id: ISSUE-0108
+title: Parse BOM-prefixed files
+kind: task
+status: proposed
+created_at: 2026-03-22T10:24:00-05:00
+---
+
+## Objective
+
+Treat BOM-prefixed Markdown files as valid input.
+`);
+
+  expect(document.frontmatter).toMatchObject({
+    spec_version: "mis/0.1",
+    id: "ISSUE-0108",
+  });
+  expect(document.body).toBe(`## Objective
+
+Treat BOM-prefixed Markdown files as valid input.
+`);
 });
 
 test("parseIssueMarkdown rejects resolution on non-terminal issues", () => {
