@@ -9,15 +9,38 @@ export type CoreIssueRelation =
   | "related_to"
   | "references";
 
-// mis/0.1 recommends namespacing custom relations, but it does not require it.
-// Keep the custom side fully open so parser/validator code can represent any
-// spec-valid input, including legacy or local relation labels.
-export type CustomIssueRelation = string;
+declare const customIssueRelationBrand: unique symbol;
+
+export const CORE_ISSUE_RELATIONS = [
+  "parent",
+  "depends_on",
+  "duplicate_of",
+  "related_to",
+  "references",
+] as const satisfies readonly CoreIssueRelation[];
+
+// A branded custom relation keeps "depends_on" out of the custom branch while
+// still allowing parser code to safely narrow arbitrary input strings.
+export type CustomIssueRelation = string & {
+  readonly [customIssueRelationBrand]: "CustomIssueRelation";
+};
 
 export type NonDependencyCoreIssueRelation = Exclude<
   CoreIssueRelation,
   "depends_on"
 >;
+
+export function isCoreIssueRelation(value: string): value is CoreIssueRelation {
+  return (
+    CORE_ISSUE_RELATIONS as readonly string[]
+  ).includes(value);
+}
+
+export function isCustomIssueRelation(
+  value: string,
+): value is CustomIssueRelation {
+  return !isCoreIssueRelation(value);
+}
 
 export interface IssueRef {
   id: string;
@@ -43,7 +66,7 @@ export interface NonDependencyCoreIssueLink extends IssueLinkBase {
 }
 
 // TypeScript cannot precisely model "any string except depends_on", so custom
-// relations remain open here while the core relation union stays strict.
+// relations are branded and narrowed through `isCustomIssueRelation`.
 export interface CustomIssueLink extends IssueLinkBase {
   rel: CustomIssueRelation;
   required_before?: never;

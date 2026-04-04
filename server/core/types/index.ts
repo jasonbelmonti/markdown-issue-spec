@@ -27,3 +27,8 @@ export type {
   NonDependencyCoreIssueLink,
   NonDependencyCoreIssueRelation,
 } from "./link.ts";
+export {
+  CORE_ISSUE_RELATIONS,
+  isCoreIssueRelation,
+  isCustomIssueRelation,
+} from "./link.ts";
