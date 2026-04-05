@@ -13,12 +13,28 @@ import {
   isCustomIssueRelation,
 } from "../types/index.ts";
 import {
+  assertNoUnknownKeys,
   assertNonEmptyString,
   isPlainObject,
   readOptionalExtensionMap,
   readOptionalString,
   readRequiredString,
 } from "./record-helpers.ts";
+
+const ISSUE_REF_ALLOWED_KEYS = [
+  "id",
+  "href",
+  "path",
+  "title",
+] as const;
+
+const ISSUE_LINK_ALLOWED_KEYS = [
+  "rel",
+  "target",
+  "required_before",
+  "note",
+  "extensions",
+] as const;
 
 const DEPENDENCY_REQUIRED_BEFORE_VALUES = [
   "in_progress",
@@ -61,6 +77,8 @@ export function normalizeIssueRef(target: unknown): IssueRef {
     throw new Error("Expected link `target` to be a string or object.");
   }
 
+  assertNoUnknownKeys(target, ISSUE_REF_ALLOWED_KEYS, "link target");
+
   const href = readOptionalString(target, "href");
   const path = readOptionalString(target, "path");
   const title = readOptionalString(target, "title");
@@ -77,6 +95,8 @@ export function normalizeIssueLink(link: unknown): IssueLink {
   if (!isPlainObject(link)) {
     throw new Error("Expected each link to be an object.");
   }
+
+  assertNoUnknownKeys(link, ISSUE_LINK_ALLOWED_KEYS, "link");
 
   const rel = readRequiredString(link, "rel");
   const target = normalizeIssueRef(link.target);

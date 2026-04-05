@@ -247,6 +247,27 @@ Required canonical identifiers must not be empty.
   );
 });
 
+test("parseIssueMarkdown rejects unknown top-level frontmatter keys", () => {
+  const source = `---
+spec_version: mis/0.1
+id: ISSUE-0109
+title: Reject unknown frontmatter keys
+kind: task
+status: proposed
+created_at: 2026-03-22T10:24:00-05:00
+priroity: high
+---
+
+## Objective
+
+Typoed top-level keys should fail fast.
+`;
+
+  expect(() => parseIssueMarkdown(source)).toThrow(
+    "Unexpected frontmatter field: priroity.",
+  );
+});
+
 test("parseIssueMarkdown preserves verbose target locator hints", () => {
   const source = `---
 spec_version: mis/0.1
@@ -367,6 +388,55 @@ Shorthand target IDs must not be empty.
 
   expect(() => parseIssueMarkdown(source)).toThrow(
     "Failed to normalize link at index 0: Expected shorthand link `target` to be a non-empty string.",
+  );
+});
+
+test("parseIssueMarkdown rejects unknown properties inside target objects", () => {
+  const source = `---
+spec_version: mis/0.1
+id: ISSUE-0110
+title: Reject unknown target properties
+kind: task
+status: accepted
+created_at: 2026-03-22T10:24:00-05:00
+links:
+  - rel: references
+    target:
+      id: ISSUE-0002
+      hrf: ../issues/ISSUE-0002.md
+---
+
+## Objective
+
+Target object typos should fail fast.
+`;
+
+  expect(() => parseIssueMarkdown(source)).toThrow(
+    "Failed to normalize link at index 0: Unexpected link target field: hrf.",
+  );
+});
+
+test("parseIssueMarkdown rejects unknown properties inside links", () => {
+  const source = `---
+spec_version: mis/0.1
+id: ISSUE-0111
+title: Reject unknown link properties
+kind: task
+status: accepted
+created_at: 2026-03-22T10:24:00-05:00
+links:
+  - rel: references
+    target: ISSUE-0002
+    notes: typoed note field
+---
+
+## Objective
+
+Closed link shapes should fail fast.
+`;
+
+  expect(() => parseIssueMarkdown(source)).toThrow(
+    "Failed to normalize link at index 0: Unexpected link field: notes.",
   );
 });
 

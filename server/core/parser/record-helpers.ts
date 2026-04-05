@@ -12,6 +12,24 @@ export function assertNonEmptyString(value: string, context: string): string {
   return value;
 }
 
+export function assertNoUnknownKeys(
+  record: Record<string, unknown>,
+  allowedKeys: readonly string[],
+  context: string,
+): void {
+  const allowedKeySet = new Set(allowedKeys);
+  const unknownKeys = Object.keys(record).filter((key) => !allowedKeySet.has(key));
+
+  if (unknownKeys.length === 0) {
+    return;
+  }
+
+  const suffix = unknownKeys.length === 1 ? "" : "s";
+  throw new Error(
+    `Unexpected ${context} field${suffix}: ${unknownKeys.join(", ")}.`,
+  );
+}
+
 export function readRequiredString(
   record: Record<string, unknown>,
   key: string,
@@ -39,7 +57,7 @@ export function readOptionalString(
     throw new Error(`Expected \`${key}\` to be a string when present.`);
   }
 
-  return value;
+  return assertNonEmptyString(value, `\`${key}\``);
 }
 
 export function readOptionalStringArray(
@@ -56,7 +74,9 @@ export function readOptionalStringArray(
     throw new Error(`Expected \`${key}\` to be an array of strings when present.`);
   }
 
-  return [...value];
+  return value.map((item, index) =>
+    assertNonEmptyString(item, `\`${key}\` item at index ${index}`),
+  );
 }
 
 export function readOptionalExtensionMap(

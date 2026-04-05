@@ -14,6 +14,7 @@ import {
 } from "./frontmatter.ts";
 import { normalizeIssueLinks } from "./normalize-issue-link.ts";
 import {
+  assertNoUnknownKeys,
   readOptionalExtensionMap,
   readOptionalString,
   readOptionalStringArray,
@@ -35,6 +36,24 @@ const ISSUE_RESOLUTIONS = [
   "wont_do",
   "superseded",
 ] as const satisfies readonly IssueResolution[];
+const ISSUE_FRONTMATTER_ALLOWED_KEYS = [
+  "spec_version",
+  "id",
+  "title",
+  "kind",
+  "status",
+  "created_at",
+  "updated_at",
+  "resolution",
+  "summary",
+  "priority",
+  "labels",
+  "assignees",
+  "links",
+  "extensions",
+  "body",
+  "description",
+] as const;
 
 interface ParsedIssueBaseFields {
   spec_version: IssueSpecVersion;
@@ -191,6 +210,11 @@ function buildIssueBase(
 export function parseIssueFromMarkdownDocument(
   document: ParsedMarkdownFrontmatterDocument,
 ): Issue {
+  assertNoUnknownKeys(
+    document.frontmatter,
+    ISSUE_FRONTMATTER_ALLOWED_KEYS,
+    "frontmatter",
+  );
   assertNoForbiddenFrontmatterFields(document.frontmatter);
 
   const status = readStatus(document.frontmatter);
