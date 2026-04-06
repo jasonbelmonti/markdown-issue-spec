@@ -9,10 +9,15 @@ import {
   type ValidationError,
 } from "./index.ts";
 
+const dependencyTargetId = "ISSUE-0001";
+const issueId = "ISSUE-0002";
+const childIssueId = "ISSUE-0003";
+const issuePath = `vault/issues/${issueId}.md`;
+
 const dependencyLink = {
   rel: "depends_on",
   target: {
-    id: "ISSUE-0001",
+    id: dependencyTargetId,
     title: "Land the parser",
   },
   required_before: "completed",
@@ -21,7 +26,7 @@ const dependencyLink = {
 
 const issue = {
   spec_version: "mis/0.1",
-  id: "ISSUE-0002",
+  id: issueId,
   title: "Define shared validation types",
   kind: "task",
   status: "completed",
@@ -39,37 +44,41 @@ const issue = {
   },
 } satisfies Issue;
 
+const derived = {
+  children_ids: [childIssueId],
+  blocks_ids: [],
+  blocked_by_ids: [dependencyTargetId],
+  duplicates_ids: [],
+  ready: false,
+  is_blocked: true,
+} satisfies IssueEnvelope["derived"];
+
+const source = {
+  file_path: issuePath,
+  indexed_at: "2026-03-27T08:31:00Z",
+} satisfies IssueEnvelope["source"];
+
 const issueEnvelope = {
   issue,
-  derived: {
-    children_ids: ["ISSUE-0003"],
-    blocks_ids: [],
-    blocked_by_ids: ["ISSUE-0001"],
-    duplicates_ids: [],
-    ready: false,
-    is_blocked: true,
-  },
+  derived,
   revision: "content-hash",
-  source: {
-    file_path: "vault/issues/ISSUE-0002.md",
-    indexed_at: "2026-03-27T08:31:00Z",
-  },
+  source,
 } satisfies IssueEnvelope;
 
 const validationError = {
   code: "parent_cycle",
   severity: "error",
   message: "Parent graph contains a cycle.",
-  issue_id: "ISSUE-0002",
-  file_path: "vault/issues/ISSUE-0002.md",
+  issue_id: issueId,
+  file_path: issuePath,
   field_path: "links[0].target",
-  related_issue_ids: ["ISSUE-0003"],
+  related_issue_ids: [childIssueId],
 } satisfies ValidationError;
 
 test("shared type examples stay aligned with runtime helpers", () => {
   expect(CORE_ISSUE_RELATIONS).toContain("depends_on");
   expect(isCoreIssueRelation(dependencyLink.rel)).toBe(true);
   expect(issueEnvelope.derived.ready).toBe(false);
-  expect(issueEnvelope.source.file_path).toBe("vault/issues/ISSUE-0002.md");
+  expect(issueEnvelope.source.file_path).toBe(issuePath);
   expect(validationError.severity).toBe("error");
 });
