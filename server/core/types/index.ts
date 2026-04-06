@@ -1,4 +1,10 @@
 export type {
+  DerivedIssueFields,
+  IssueEnvelope,
+  IssueRevision,
+  IssueSource,
+} from "./envelope.ts";
+export type {
   CanceledIssue,
   CanceledIssueResolution,
   CompletedIssue,
@@ -27,6 +33,11 @@ export type {
   NonDependencyCoreIssueLink,
   NonDependencyCoreIssueRelation,
 } from "./link.ts";
+export type {
+  ValidationCode,
+  ValidationError,
+  ValidationSeverity,
+} from "./validation.ts";
 export {
   CORE_ISSUE_RELATIONS,
   isCoreIssueRelation,
