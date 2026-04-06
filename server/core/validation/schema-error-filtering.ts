@@ -12,12 +12,38 @@ function compareValidationErrors(
   );
 }
 
-function hasMoreSpecificErrorForPath(
+function hasDescendantErrorForPath(
   errors: readonly FrontmatterValidationError[],
   path: string,
 ): boolean {
   return errors.some((error) =>
-    error.path === path || error.path.startsWith(`${path}/`)
+    error.path.startsWith(`${path}/`)
+  );
+}
+
+function hasOtherErrorAtPath(
+  errors: readonly FrontmatterValidationError[],
+  path: string,
+): boolean {
+  return errors.some((error) => error.path === path);
+}
+
+function isGenericSchemaError(error: FrontmatterValidationError): boolean {
+  return (
+    error.code === "schema.oneOf" ||
+    error.code === "schema.anyOf" ||
+    error.code === "schema.if"
+  );
+}
+
+function isEquivalentSchemaError(
+  left: FrontmatterValidationError,
+  right: FrontmatterValidationError,
+): boolean {
+  return (
+    left.code === right.code &&
+    left.path === right.path &&
+    left.message === right.message
   );
 }
 
@@ -25,16 +51,19 @@ function shouldKeepSchemaError(
   error: FrontmatterValidationError,
   otherErrors: readonly FrontmatterValidationError[],
 ): boolean {
-  if (
-    error.code === "schema.oneOf" ||
-    error.code === "schema.anyOf" ||
-    error.code === "schema.if"
-  ) {
-    return !hasMoreSpecificErrorForPath(otherErrors, error.path);
+  if (otherErrors.some((otherError) => isEquivalentSchemaError(error, otherError))) {
+    return false;
+  }
+
+  if (isGenericSchemaError(error)) {
+    return !(
+      hasOtherErrorAtPath(otherErrors, error.path) ||
+      hasDescendantErrorForPath(otherErrors, error.path)
+    );
   }
 
   if (error.code === "schema.type" && isLinkTargetPath(error.path)) {
-    return !hasMoreSpecificErrorForPath(otherErrors, error.path);
+    return !hasDescendantErrorForPath(otherErrors, error.path);
   }
 
   return true;
@@ -46,7 +75,7 @@ export function finalizeSchemaErrors(
   const sortedErrors = [...errors].sort(compareValidationErrors);
 
   return sortedErrors.filter((error, index) => {
-    const otherErrors = sortedErrors.filter((_, otherIndex) => otherIndex !== index);
+    const otherErrors = sortedErrors.slice(index + 1);
     return shouldKeepSchemaError(error, otherErrors);
   });
 }

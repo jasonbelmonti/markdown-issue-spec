@@ -155,6 +155,73 @@ Catch invalid non-dependency gating in the validator.
   ]);
 });
 
+test("validateMarkdownFrontmatter rejects scalar link targets", () => {
+  const frontmatter = parseMarkdownFrontmatterDocument(`---
+spec_version: mis/0.1
+id: ISSUE-0204
+title: Link targets must be strings or objects
+kind: task
+status: accepted
+created_at: 2026-03-22T10:24:00-05:00
+links:
+  - rel: references
+    target: 123
+---
+
+## Objective
+
+Reject scalar link targets in the validator.
+`).frontmatter;
+
+  expect(validateMarkdownFrontmatter(frontmatter)).toEqual([
+    {
+      code: "schema.type",
+      source: "schema",
+      path: "/links/0/target",
+      message: "Expected link `target` to be a string or object.",
+      details: {
+        keyword: "type",
+        expectedType: "object",
+        schemaPath: "#/type",
+      },
+    },
+  ]);
+});
+
+test("validateMarkdownFrontmatter rejects array link targets", () => {
+  const frontmatter = parseMarkdownFrontmatterDocument(`---
+spec_version: mis/0.1
+id: ISSUE-0205
+title: Link targets cannot be arrays
+kind: task
+status: accepted
+created_at: 2026-03-22T10:24:00-05:00
+links:
+  - rel: references
+    target:
+      - ISSUE-0002
+---
+
+## Objective
+
+Reject array link targets in the validator.
+`).frontmatter;
+
+  expect(validateMarkdownFrontmatter(frontmatter)).toEqual([
+    {
+      code: "schema.type",
+      source: "schema",
+      path: "/links/0/target",
+      message: "Expected link `target` to be a string or object.",
+      details: {
+        keyword: "type",
+        expectedType: "object",
+        schemaPath: "#/type",
+      },
+    },
+  ]);
+});
+
 test("MarkdownFrontmatterValidationError retains structured validation errors", () => {
   const error = new MarkdownFrontmatterValidationError([
     {
