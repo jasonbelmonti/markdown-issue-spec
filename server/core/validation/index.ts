@@ -13,6 +13,7 @@ export {
   IssueSemanticValidationError,
   validateIssueSemantics,
 } from "./semantic-validation.ts";
+export { evaluateIssueTransitionGuard } from "./transition-guard.ts";
 export type {
   FrontmatterValidationError,
   FrontmatterValidationSource,
@@ -21,3 +22,11 @@ export type {
   SemanticValidationError,
   SemanticValidationSource,
 } from "./semantic-validation.ts";
+export type {
+  EvaluateIssueTransitionGuardInput,
+  GuardedIssueTransitionStatus,
+  IssueTransitionGuardResult,
+  TransitionGuardError,
+  TransitionGuardErrorCode,
+  TransitionGuardSource,
+} from "./transition-guard.ts";
