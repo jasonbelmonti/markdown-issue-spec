@@ -1,7 +1,10 @@
 import { expect, test } from "bun:test";
 import { fileURLToPath } from "node:url";
 
-import { MarkdownFrontmatterValidationError } from "../validation/index.ts";
+import {
+  IssueSemanticValidationError,
+  MarkdownFrontmatterValidationError,
+} from "../validation/index.ts";
 import {
   parseIssueMarkdown,
   parseIssueMarkdownFile,
@@ -288,6 +291,46 @@ Surface structured validation details.
   }
 });
 
+test("parseIssueMarkdown rejects self-links after frontmatter validation passes", () => {
+  const source = `---
+spec_version: mis/0.1
+id: ISSUE-0112
+title: Reject semantic self-links
+kind: task
+status: accepted
+created_at: 2026-03-22T10:24:00-05:00
+links:
+  - rel: references
+    target: ISSUE-0112
+---
+
+## Objective
+
+Semantic validation should run on otherwise valid parsed issues.
+`;
+
+  try {
+    parseIssueMarkdown(source);
+    throw new Error("Expected parseIssueMarkdown to throw.");
+  } catch (error) {
+    expect(error).toBeInstanceOf(IssueSemanticValidationError);
+    expect((error as IssueSemanticValidationError).errors).toEqual([
+      {
+        code: "semantic.self_link",
+        source: "semantic",
+        path: "/links/0/target/id",
+        message: "Issue links must not target the source issue itself.",
+        details: {
+          issueId: "ISSUE-0112",
+          rel: "references",
+          targetIssueId: "ISSUE-0112",
+        },
+        related_issue_ids: ["ISSUE-0112"],
+      },
+    ]);
+  }
+});
+
 test("parseIssueMarkdown rejects empty required string fields", () => {
   const source = `---
 spec_version: mis/0.1
@@ -499,6 +542,44 @@ Closed link shapes should fail fast.
   expect(() => parseIssueMarkdown(source)).toThrow(
     "Unexpected link field: notes.",
   );
+});
+
+test("parseIssueMarkdown preserves duplicate_of semantics that remain SHOULD-level", () => {
+  const source = `---
+spec_version: mis/0.1
+id: ISSUE-0113
+title: Keep duplicate semantics policy-dependent
+kind: task
+status: accepted
+created_at: 2026-03-22T10:24:00-05:00
+links:
+  - rel: duplicate_of
+    target: ISSUE-0007
+---
+
+## Objective
+
+Parser-time semantics should preserve duplicate_of links when they are not a hard validation failure.
+`;
+
+  expect(parseIssueMarkdown(source)).toMatchObject({
+    spec_version: "mis/0.1",
+    id: "ISSUE-0113",
+    title: "Keep duplicate semantics policy-dependent",
+    kind: "task",
+    status: "accepted",
+    created_at: "2026-03-22T10:24:00-05:00",
+    links: [
+      {
+        rel: "duplicate_of",
+        target: { id: "ISSUE-0007" },
+      },
+    ],
+    body: `## Objective
+
+Parser-time semantics should preserve duplicate_of links when they are not a hard validation failure.
+`,
+  });
 });
 
 test("parseMarkdownFrontmatterDocument parses YAML without relying on Bun.YAML", () => {
