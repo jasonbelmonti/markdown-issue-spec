@@ -8,7 +8,10 @@ import type {
   IssueSpecVersion,
   IssueStatus,
 } from "../types/index.ts";
-import { assertValidMarkdownFrontmatter } from "../validation/index.ts";
+import {
+  assertValidIssueSemantics,
+  assertValidMarkdownFrontmatter,
+} from "../validation/index.ts";
 import {
   parseMarkdownFrontmatterDocument,
   type ParsedMarkdownFrontmatterDocument,
@@ -134,27 +137,30 @@ export function parseIssueFromMarkdownDocument(
   assertValidMarkdownFrontmatter(document.frontmatter);
   const status = readStatus(document.frontmatter);
   const issueBase = buildIssueBase(document.frontmatter, document.body);
+  let issue: Issue;
 
   if (status === "completed") {
-    return {
+    issue = {
       ...issueBase,
       status: "completed",
       resolution: readCompletedResolution(document.frontmatter),
     };
-  }
-
-  if (status === "canceled") {
-    return {
+  } else if (status === "canceled") {
+    issue = {
       ...issueBase,
       status: "canceled",
       resolution: readCanceledResolution(document.frontmatter),
     };
+  } else {
+    issue = {
+      ...issueBase,
+      status,
+    };
   }
 
-  return {
-    ...issueBase,
-    status,
-  };
+  assertValidIssueSemantics(issue);
+
+  return issue;
 }
 
 export function parseIssueMarkdown(source: string): Issue {
