@@ -8,52 +8,18 @@ import type {
   IssueSpecVersion,
   IssueStatus,
 } from "../types/index.ts";
+import { assertValidMarkdownFrontmatter } from "../validation/index.ts";
 import {
   parseMarkdownFrontmatterDocument,
   type ParsedMarkdownFrontmatterDocument,
 } from "./frontmatter.ts";
 import { normalizeIssueLinks } from "./normalize-issue-link.ts";
 import {
-  assertNoUnknownKeys,
   readOptionalExtensionMap,
   readOptionalString,
   readOptionalStringArray,
   readRequiredString,
 } from "./record-helpers.ts";
-
-const ISSUE_SPEC_VERSIONS = ["mis/0.1"] as const satisfies readonly IssueSpecVersion[];
-const ISSUE_STATUSES = [
-  "proposed",
-  "accepted",
-  "in_progress",
-  "completed",
-  "canceled",
-] as const satisfies readonly IssueStatus[];
-const ISSUE_RESOLUTIONS = [
-  "done",
-  "duplicate",
-  "obsolete",
-  "wont_do",
-  "superseded",
-] as const satisfies readonly IssueResolution[];
-const ISSUE_FRONTMATTER_ALLOWED_KEYS = [
-  "spec_version",
-  "id",
-  "title",
-  "kind",
-  "status",
-  "created_at",
-  "updated_at",
-  "resolution",
-  "summary",
-  "priority",
-  "labels",
-  "assignees",
-  "links",
-  "extensions",
-  "body",
-  "description",
-] as const;
 
 interface ParsedIssueBaseFields {
   spec_version: IssueSpecVersion;
@@ -72,33 +38,15 @@ interface ParsedIssueBaseFields {
 }
 
 function readSpecVersion(record: Record<string, unknown>): IssueSpecVersion {
-  const value = readRequiredString(record, "spec_version");
-
-  if (!(ISSUE_SPEC_VERSIONS as readonly string[]).includes(value)) {
-    throw new Error(`Unsupported issue spec version: ${value}`);
-  }
-
-  return value as IssueSpecVersion;
+  return readRequiredString(record, "spec_version") as IssueSpecVersion;
 }
 
 function readStatus(record: Record<string, unknown>): IssueStatus {
-  const value = readRequiredString(record, "status");
-
-  if (!(ISSUE_STATUSES as readonly string[]).includes(value)) {
-    throw new Error(`Unsupported issue status: ${value}`);
-  }
-
-  return value as IssueStatus;
+  return readRequiredString(record, "status") as IssueStatus;
 }
 
 function readResolution(record: Record<string, unknown>): IssueResolution {
-  const value = readRequiredString(record, "resolution");
-
-  if (!(ISSUE_RESOLUTIONS as readonly string[]).includes(value)) {
-    throw new Error(`Unsupported issue resolution: ${value}`);
-  }
-
-  return value as IssueResolution;
+  return readRequiredString(record, "resolution") as IssueResolution;
 }
 
 function readCompletedResolution(
@@ -123,33 +71,6 @@ function readCanceledResolution(
   }
 
   return resolution;
-}
-
-function assertNonTerminalStatusHasNoResolution(
-  record: Record<string, unknown>,
-  status: Exclude<IssueStatus, "completed" | "canceled">,
-): void {
-  if ("resolution" in record) {
-    throw new Error(
-      `Non-terminal issues with status \`${status}\` must not declare \`resolution\`.`,
-    );
-  }
-}
-
-function assertNoForbiddenFrontmatterFields(
-  record: Record<string, unknown>,
-): void {
-  if ("body" in record) {
-    throw new Error(
-      "Markdown frontmatter must not declare `body`; use the Markdown document body instead.",
-    );
-  }
-
-  if ("description" in record) {
-    throw new Error(
-      "Markdown frontmatter must not declare `description`; use the Markdown document body instead.",
-    );
-  }
 }
 
 function buildIssueBase(
@@ -210,13 +131,7 @@ function buildIssueBase(
 export function parseIssueFromMarkdownDocument(
   document: ParsedMarkdownFrontmatterDocument,
 ): Issue {
-  assertNoUnknownKeys(
-    document.frontmatter,
-    ISSUE_FRONTMATTER_ALLOWED_KEYS,
-    "frontmatter",
-  );
-  assertNoForbiddenFrontmatterFields(document.frontmatter);
-
+  assertValidMarkdownFrontmatter(document.frontmatter);
   const status = readStatus(document.frontmatter);
   const issueBase = buildIssueBase(document.frontmatter, document.body);
 
@@ -235,8 +150,6 @@ export function parseIssueFromMarkdownDocument(
       resolution: readCanceledResolution(document.frontmatter),
     };
   }
-
-  assertNonTerminalStatusHasNoResolution(document.frontmatter, status);
 
   return {
     ...issueBase,

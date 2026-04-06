@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { fileURLToPath } from "node:url";
 
+import { MarkdownFrontmatterValidationError } from "../validation/index.ts";
 import {
   parseIssueMarkdown,
   parseIssueMarkdownFile,
@@ -227,6 +228,66 @@ Use the Markdown body instead.
   );
 });
 
+test("parseIssueMarkdown surfaces structured validation errors", () => {
+  const source = `---
+spec_version: mis/0.1
+id: ISSUE-0105
+title: Reject multiple invalid frontmatter fields
+kind: task
+status: proposed
+created_at: invalid-timestamp
+description: this key is forbidden for the markdown frontmatter profile
+priroity: high
+---
+
+## Objective
+
+Surface structured validation details.
+`;
+
+  try {
+    parseIssueMarkdown(source);
+    throw new Error("Expected parseIssueMarkdown to throw.");
+  } catch (error) {
+    expect(error).toBeInstanceOf(MarkdownFrontmatterValidationError);
+
+    expect((error as MarkdownFrontmatterValidationError).errors).toEqual([
+      {
+        code: "schema.format",
+        source: "schema",
+        path: "/created_at",
+        message: "Expected `created_at` to be an RFC 3339 date-time string.",
+        details: {
+          keyword: "format",
+          format: "date-time",
+          schemaPath: "#/properties/created_at/format",
+        },
+      },
+      {
+        code: "profile.forbidden_frontmatter_field",
+        source: "profile",
+        path: "/description",
+        message:
+          "Markdown frontmatter must not declare `description`; use the Markdown document body instead.",
+        details: {
+          field: "description",
+        },
+      },
+      {
+        code: "schema.additional_properties",
+        source: "schema",
+        path: "/priroity",
+        message: "Unexpected frontmatter field: priroity.",
+        details: {
+          keyword: "additionalProperties",
+          property: "priroity",
+          schemaPath: "#/additionalProperties",
+        },
+      },
+    ]);
+  }
+});
+
 test("parseIssueMarkdown rejects empty required string fields", () => {
   const source = `---
 spec_version: mis/0.1
@@ -364,7 +425,7 @@ Do not silently drop invalid dependency-only fields.
 `;
 
   expect(() => parseIssueMarkdown(source)).toThrow(
-    "Failed to normalize link at index 0: Only `depends_on` links may declare `required_before`.",
+    "Only `depends_on` links may declare `required_before`.",
   );
 });
 
@@ -387,7 +448,7 @@ Shorthand target IDs must not be empty.
 `;
 
   expect(() => parseIssueMarkdown(source)).toThrow(
-    "Failed to normalize link at index 0: Expected shorthand link `target` to be a non-empty string.",
+    "Expected shorthand link `target` to be a non-empty string.",
   );
 });
 
@@ -412,7 +473,7 @@ Target object typos should fail fast.
 `;
 
   expect(() => parseIssueMarkdown(source)).toThrow(
-    "Failed to normalize link at index 0: Unexpected link target field: hrf.",
+    "Unexpected link target field: hrf.",
   );
 });
 
@@ -436,7 +497,7 @@ Closed link shapes should fail fast.
 `;
 
   expect(() => parseIssueMarkdown(source)).toThrow(
-    "Failed to normalize link at index 0: Unexpected link field: notes.",
+    "Unexpected link field: notes.",
   );
 });
 
