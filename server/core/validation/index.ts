@@ -8,7 +8,16 @@ export {
   assertValidMarkdownFrontmatter,
   validateMarkdownFrontmatter,
 } from "./validate-markdown-frontmatter.ts";
+export {
+  assertValidIssueSemantics,
+  IssueSemanticValidationError,
+  validateIssueSemantics,
+} from "./semantic-validation.ts";
 export type {
   FrontmatterValidationError,
   FrontmatterValidationSource,
 } from "./types.ts";
+export type {
+  SemanticValidationError,
+  SemanticValidationSource,
+} from "./semantic-validation.ts";
