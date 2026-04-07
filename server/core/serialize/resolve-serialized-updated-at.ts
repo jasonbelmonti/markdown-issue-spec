@@ -5,7 +5,7 @@ export function resolveSerializedUpdatedAt(
   issue: Issue,
   policy: SerializeIssueUpdatedAtPolicy | undefined,
 ): Rfc3339Timestamp | undefined {
-  if (policy === undefined || policy.mode === "preserve") {
+  if (policy === undefined || policy.mode !== "canonical_mutation") {
     return issue.updated_at;
   }
 

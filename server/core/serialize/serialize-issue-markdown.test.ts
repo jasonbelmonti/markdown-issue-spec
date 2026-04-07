@@ -118,6 +118,20 @@ test(
 );
 
 test(
+  "serializeIssueMarkdown treats an empty updatedAt policy object as preserve mode",
+  async () => {
+    const issue = await loadFixtureIssue(VALID_FIXTURE_CASES[0]);
+    const document = parseMarkdownFrontmatterDocument(
+      serializeIssueMarkdown(issue, {
+        updatedAt: {},
+      }),
+    );
+
+    expect(document.frontmatter.updated_at).toBe(issue.updated_at);
+  },
+);
+
+test(
   "serializeIssueMarkdown updates updated_at for canonical mutations when it is already present",
   async () => {
     const issue = await loadFixtureIssue(VALID_FIXTURE_CASES[0]);
