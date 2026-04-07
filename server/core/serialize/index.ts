@@ -3,5 +3,5 @@ export type {
   PreserveUpdatedAtPolicy,
   SerializeIssueMarkdownOptions,
   SerializeIssueUpdatedAtPolicy,
-} from "./serialize-issue-markdown.ts";
+} from "./types.ts";
 export { serializeIssueMarkdown } from "./serialize-issue-markdown.ts";
