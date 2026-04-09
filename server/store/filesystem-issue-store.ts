@@ -11,6 +11,14 @@ export interface FilesystemIssueStoreOptions {
   rootDirectory: string;
 }
 
+function assertMatchingIssueId(requestedIssueId: string, issue: Issue): void {
+  if (issue.id !== requestedIssueId) {
+    throw new Error(
+      `Issue file for "${requestedIssueId}" contained mismatched frontmatter id "${issue.id}".`,
+    );
+  }
+}
+
 export class FilesystemIssueStore {
   readonly rootDirectory: string;
 
@@ -23,7 +31,11 @@ export class FilesystemIssueStore {
   }
 
   async readIssue(issueId: string): Promise<Issue> {
-    return parseIssueMarkdownFile(this.getIssueFilePath(issueId));
+    const issue = await parseIssueMarkdownFile(this.getIssueFilePath(issueId));
+
+    assertMatchingIssueId(issueId, issue);
+
+    return issue;
   }
 
   async writeIssue(

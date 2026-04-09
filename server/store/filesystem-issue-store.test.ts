@@ -74,6 +74,25 @@ test("FilesystemIssueStore writes and reads canonical issues at vault/issues/<id
   expect(await store.readIssue("ISSUE-0200")).toEqual(BASE_ISSUE);
 });
 
+test("FilesystemIssueStore rejects files whose stored id does not match the requested id", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+  const store = new FilesystemIssueStore({ rootDirectory });
+
+  await store.writeIssue(BASE_ISSUE);
+
+  const filePath = store.getIssueFilePath(BASE_ISSUE.id);
+  const tamperedContent = (await readFile(filePath, "utf8")).replace(
+    "id: ISSUE-0200",
+    "id: ISSUE-0999",
+  );
+
+  await atomicWriteFile(filePath, tamperedContent);
+
+  await expect(store.readIssue("ISSUE-0200")).rejects.toThrow(
+    'Issue file for "ISSUE-0200" contained mismatched frontmatter id "ISSUE-0999".',
+  );
+});
+
 test("FilesystemIssueStore rejects unsafe issue ids before reading or writing", async () => {
   const rootDirectory = await createTemporaryRootDirectory();
   const store = new FilesystemIssueStore({ rootDirectory });
