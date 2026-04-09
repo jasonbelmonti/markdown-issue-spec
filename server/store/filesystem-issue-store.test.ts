@@ -45,6 +45,9 @@ test("getIssueFilePath derives vault/issues/<id>.md from the issue id", async ()
 test("getIssueFilePath rejects traversal segments in issue ids", async () => {
   const rootDirectory = await createTemporaryRootDirectory();
 
+  expect(() => getIssueFilePath(rootDirectory, "")).toThrow(
+    "Issue id must be a non-empty string when building filesystem paths.",
+  );
   expect(() => getIssueFilePath(rootDirectory, "../ISSUE-0200")).toThrow(
     'Issue id "../ISSUE-0200" cannot contain path separators when building filesystem paths.',
   );
@@ -96,11 +99,21 @@ test("FilesystemIssueStore rejects files whose stored id does not match the requ
 test("FilesystemIssueStore rejects unsafe issue ids before reading or writing", async () => {
   const rootDirectory = await createTemporaryRootDirectory();
   const store = new FilesystemIssueStore({ rootDirectory });
+  const emptyIssue: Issue = {
+    ...BASE_ISSUE,
+    id: "",
+  };
   const unsafeIssue: Issue = {
     ...BASE_ISSUE,
     id: "../../escape",
   };
 
+  await expect(store.writeIssue(emptyIssue)).rejects.toThrow(
+    "Issue id must be a non-empty string when building filesystem paths.",
+  );
+  await expect(store.readIssue("")).rejects.toThrow(
+    "Issue id must be a non-empty string when building filesystem paths.",
+  );
   await expect(store.writeIssue(unsafeIssue)).rejects.toThrow(
     'Issue id "../../escape" cannot contain path separators when building filesystem paths.',
   );
