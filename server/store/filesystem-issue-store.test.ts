@@ -42,6 +42,17 @@ test("getIssueFilePath derives vault/issues/<id>.md from the issue id", async ()
   );
 });
 
+test("getIssueFilePath rejects traversal segments in issue ids", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+
+  expect(() => getIssueFilePath(rootDirectory, "../ISSUE-0200")).toThrow(
+    'Issue id "../ISSUE-0200" cannot contain path separators when building filesystem paths.',
+  );
+  expect(() => getIssueFilePath(rootDirectory, "..")).toThrow(
+    'Issue id ".." cannot be "." or ".." when building filesystem paths.',
+  );
+});
+
 test("atomicWriteFile creates parent directories and leaves only the target file behind", async () => {
   const rootDirectory = await createTemporaryRootDirectory();
   const issueDirectory = join(rootDirectory, "vault", "issues");
@@ -61,6 +72,22 @@ test("FilesystemIssueStore writes and reads canonical issues at vault/issues/<id
 
   expect(filePath).toBe(join(rootDirectory, "vault", "issues", "ISSUE-0200.md"));
   expect(await store.readIssue("ISSUE-0200")).toEqual(BASE_ISSUE);
+});
+
+test("FilesystemIssueStore rejects unsafe issue ids before reading or writing", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+  const store = new FilesystemIssueStore({ rootDirectory });
+  const unsafeIssue: Issue = {
+    ...BASE_ISSUE,
+    id: "../../escape",
+  };
+
+  await expect(store.writeIssue(unsafeIssue)).rejects.toThrow(
+    'Issue id "../../escape" cannot contain path separators when building filesystem paths.',
+  );
+  await expect(store.readIssue("../../escape")).rejects.toThrow(
+    'Issue id "../../escape" cannot contain path separators when building filesystem paths.',
+  );
 });
 
 test("FilesystemIssueStore forwards serializer updated_at mutation policy during writes", async () => {
