@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
 
 export const PROJECTION_SCHEMA_VERSION = 1;
+const PROJECTION_SCHEMA_VERSION_KEY = "schema_version";
 
 export const PROJECTION_TABLE_NAMES = {
   metadata: "projection_meta",
@@ -11,7 +12,7 @@ export const PROJECTION_TABLE_NAMES = {
   validationErrors: "validation_errors",
 } as const;
 
-const PROJECTION_SCHEMA_STATEMENTS = [
+const CREATE_TABLE_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS ${PROJECTION_TABLE_NAMES.metadata} (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -88,6 +89,9 @@ const PROJECTION_SCHEMA_STATEMENTS = [
     related_issue_ids_json TEXT,
     PRIMARY KEY (file_path, position)
   )`,
+] as const;
+
+const CREATE_INDEX_STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS issues_status_updated_at_idx
     ON ${PROJECTION_TABLE_NAMES.issues}(status, updated_at, issue_id)`,
   `CREATE INDEX IF NOT EXISTS issues_kind_updated_at_idx
@@ -110,14 +114,18 @@ function setProjectionSchemaVersion(database: Database): void {
   database
     .query(
       `INSERT INTO ${PROJECTION_TABLE_NAMES.metadata} (key, value)
-       VALUES ('schema_version', ?1)
+       VALUES (?1, ?2)
        ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
     )
-    .run(String(PROJECTION_SCHEMA_VERSION));
+    .run(PROJECTION_SCHEMA_VERSION_KEY, String(PROJECTION_SCHEMA_VERSION));
 }
 
 export function applyProjectionSchema(database: Database): void {
-  for (const statement of PROJECTION_SCHEMA_STATEMENTS) {
+  for (const statement of CREATE_TABLE_STATEMENTS) {
+    database.exec(statement);
+  }
+
+  for (const statement of CREATE_INDEX_STATEMENTS) {
     database.exec(statement);
   }
 
