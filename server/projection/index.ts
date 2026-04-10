@@ -12,3 +12,7 @@ export {
   indexValidationErrors,
   type ValidationErrorIndexTarget,
 } from "./index-validation-errors.ts";
+export {
+  writeProjectionState,
+  type ProjectionStateWriteInput,
+} from "./write-projection-state.ts";
