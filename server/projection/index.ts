@@ -8,3 +8,7 @@ export {
   PROJECTION_TABLE_NAMES,
 } from "./schema.ts";
 export { indexIssueEnvelope } from "./index-issue.ts";
+export {
+  indexValidationErrors,
+  type ValidationErrorIndexTarget,
+} from "./index-validation-errors.ts";
