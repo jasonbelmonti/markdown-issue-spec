@@ -3,4 +3,4 @@ export {
   FilesystemIssueStore,
   type FilesystemIssueStoreOptions,
 } from "./filesystem-issue-store.ts";
-export { getIssueFilePath } from "./issue-file-path.ts";
+export { getIssueDirectoryPath, getIssueFilePath } from "./issue-file-path.ts";

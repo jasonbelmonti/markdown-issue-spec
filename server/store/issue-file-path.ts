@@ -28,5 +28,9 @@ export function getIssueFilePath(
 ): string {
   assertSafeIssueId(issueId);
 
-  return join(rootDirectory, ...ISSUE_DIRECTORY_SEGMENTS, `${issueId}.md`);
+  return join(getIssueDirectoryPath(rootDirectory), `${issueId}.md`);
+}
+
+export function getIssueDirectoryPath(rootDirectory: string): string {
+  return join(rootDirectory, ...ISSUE_DIRECTORY_SEGMENTS);
 }
