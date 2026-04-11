@@ -1,1 +1,3 @@
-console.log("Hello via Bun!");
+import { startServer } from "./server/http/server.ts";
+
+startServer();
