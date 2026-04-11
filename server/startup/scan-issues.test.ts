@@ -5,7 +5,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { openProjectionDatabase } from "../projection/index.ts";
-import { scanIssueFilesIntoProjection } from "./index.ts";
+import {
+  rejectDuplicateParsedIssueIds,
+  scanIssueFilesIntoProjection,
+} from "./index.ts";
 
 type ProjectionDatabase = ReturnType<typeof openProjectionDatabase>;
 
@@ -184,8 +187,8 @@ test("scanIssueFilesIntoProjection indexes canonical issue files in deterministi
         file_path: "vault/issues/ISSUE-0400.md",
         revision: createRevision(ISSUE_0400_SOURCE),
         indexed_at: FIXED_INDEXED_AT,
-        ready: 0,
-        is_blocked: 1,
+        ready: 1,
+        is_blocked: 0,
       },
       {
         issue_id: "ISSUE-0500",
@@ -237,4 +240,88 @@ test("scanIssueFilesIntoProjection collects parse failures and continues indexin
   } finally {
     database.close();
   }
+});
+
+test("scanIssueFilesIntoProjection rejects files whose frontmatter id does not match the filename", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+  const database = openMemoryProjectionDatabase();
+
+  await writeIssueFile(
+    rootDirectory,
+    "ISSUE-0001.md",
+    replaceIssueId(ISSUE_0100_SOURCE, "ISSUE-9999"),
+  );
+
+  try {
+    const result = await scanIssueFilesIntoProjection({
+      database,
+      rootDirectory,
+      indexedAt: FIXED_INDEXED_AT,
+    });
+
+    expect(result.issueEnvelopes).toEqual([]);
+    expect(result.failures).toEqual([
+      {
+        filePath: "vault/issues/ISSUE-0001.md",
+        message:
+          'Issue file for "ISSUE-0001" contained mismatched frontmatter id "ISSUE-9999".',
+      },
+    ]);
+    expect(getIndexedIssueRows(database)).toEqual([]);
+  } finally {
+    database.close();
+  }
+});
+
+test("rejectDuplicateParsedIssueIds reports conflicting issue ids instead of overwriting later entries", () => {
+  const duplicateIssueId = "ISSUE-0001";
+
+  const result = rejectDuplicateParsedIssueIds([
+    {
+      issue: {
+        spec_version: "mis/0.1",
+        id: duplicateIssueId,
+        title: "First copy",
+        kind: "task",
+        status: "accepted",
+        created_at: "2026-04-10T12:00:00-05:00",
+      },
+      revision: "rev-1",
+      source: {
+        file_path: "vault/issues/a/ISSUE-0001.md",
+        indexed_at: FIXED_INDEXED_AT,
+      },
+    },
+    {
+      issue: {
+        spec_version: "mis/0.1",
+        id: duplicateIssueId,
+        title: "Second copy",
+        kind: "task",
+        status: "accepted",
+        created_at: "2026-04-10T12:05:00-05:00",
+      },
+      revision: "rev-2",
+      source: {
+        file_path: "vault/issues/b/ISSUE-0001.md",
+        indexed_at: FIXED_INDEXED_AT,
+      },
+    },
+  ]);
+
+  expect(result.acceptedParsedIssues).toEqual([]);
+  expect(result.failures).toEqual([
+    {
+      filePath: "vault/issues/a/ISSUE-0001.md",
+      message: `Discovered duplicate issue id "ISSUE-0001" in multiple files:
+- vault/issues/a/ISSUE-0001.md
+- vault/issues/b/ISSUE-0001.md`,
+    },
+    {
+      filePath: "vault/issues/b/ISSUE-0001.md",
+      message: `Discovered duplicate issue id "ISSUE-0001" in multiple files:
+- vault/issues/a/ISSUE-0001.md
+- vault/issues/b/ISSUE-0001.md`,
+    },
+  ]);
 });

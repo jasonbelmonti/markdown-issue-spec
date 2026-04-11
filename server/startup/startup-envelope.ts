@@ -1,10 +1,12 @@
 import type {
+  DependencyIssueLink,
   DerivedIssueFields,
   Issue,
   IssueEnvelope,
   IssueLink,
   IssueSource,
   IssueRevision,
+  NonTerminalIssueStatus,
 } from "../core/types/index.ts";
 
 export interface ParsedStartupIssueFile {
@@ -48,13 +50,56 @@ function getIncomingRelationIds(
   );
 }
 
-function getUnsatisfiedDependencyIds(
+function isDependencyLink(link: IssueLink): link is DependencyIssueLink {
+  return link.rel === "depends_on";
+}
+
+function shouldEvaluateDependencyForTransition(
+  issueStatus: NonTerminalIssueStatus,
+  link: DependencyIssueLink,
+  nextStatus: "in_progress" | "completed",
+): boolean {
+  if (nextStatus === "in_progress") {
+    return link.required_before === "in_progress";
+  }
+
+  if (link.required_before === "completed") {
+    return true;
+  }
+
+  return issueStatus !== "in_progress";
+}
+
+function getBlockingDependencyIds(
   issue: Issue,
   issuesById: ReadonlyMap<string, Issue>,
 ): string[] {
-  return getLinkTargetIds(issue, "depends_on").filter(
-    (dependencyIssueId) =>
-      !isSatisfiedDependencyTarget(issuesById.get(dependencyIssueId)),
+  const issueStatus = issue.status;
+
+  if (issueStatus === "completed" || issueStatus === "canceled") {
+    return [];
+  }
+
+  const blockingTransitionStatus =
+    issueStatus === "in_progress" ? "completed" : "in_progress";
+
+  return Array.from(
+    new Set(
+      (issue.links ?? [])
+        .filter(isDependencyLink)
+        .filter((link) =>
+          shouldEvaluateDependencyForTransition(
+            issueStatus,
+            link,
+            blockingTransitionStatus,
+          ),
+        )
+        .map((link) => link.target.id)
+        .filter(
+          (dependencyIssueId) =>
+            !isSatisfiedDependencyTarget(issuesById.get(dependencyIssueId)),
+        ),
+    ),
   );
 }
 
@@ -64,7 +109,7 @@ function deriveStartupFields(
   issuesById: ReadonlyMap<string, Issue>,
 ): DerivedIssueFields {
   const { issue } = parsedIssue;
-  const blockedByIds = getUnsatisfiedDependencyIds(issue, issuesById);
+  const blockedByIds = getBlockingDependencyIds(issue, issuesById);
 
   return {
     children_ids: getIncomingRelationIds(parsedIssues, issue.id, "parent"),

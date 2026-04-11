@@ -5,6 +5,7 @@ export {
   type ParsedStartupIssueFile,
 } from "./startup-envelope.ts";
 export {
+  rejectDuplicateParsedIssueIds,
   scanIssueFilesIntoProjection,
   type ScanIssuesIntoProjectionOptions,
   type StartupScanFailure,
