@@ -32,7 +32,7 @@ function compareIssueIds(left: string, right: string): number {
 
 function sortUniqueIssueIds(issueIds: readonly string[] | undefined): string[] | undefined {
   if (issueIds === undefined || issueIds.length === 0) {
-    return issueIds;
+    return issueIds === undefined ? undefined : [];
   }
 
   return Array.from(new Set(issueIds)).sort(compareIssueIds);
