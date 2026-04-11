@@ -71,6 +71,22 @@ test("parseJsonBody rejects lookalike non-json media types", async () => {
   });
 });
 
+test("parseJsonBody accepts json content types with optional whitespace before parameters", async () => {
+  const request = new Request("http://localhost/issues", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json ; charset=utf-8",
+    },
+    body: JSON.stringify({
+      title: "Whitespace happens",
+    }),
+  });
+
+  expect(await parseJsonBody<{ title: string }>(request)).toEqual({
+    title: "Whitespace happens",
+  });
+});
+
 test("parseJsonBody rejects malformed JSON with a machine-readable error", async () => {
   const request = new Request("http://localhost/issues", {
     method: "POST",

@@ -7,10 +7,7 @@ function isJsonContentType(contentType: string | null): boolean {
 
   const normalizedContentType = contentType.toLowerCase().trim();
 
-  return (
-    normalizedContentType === "application/json" ||
-    normalizedContentType.startsWith("application/json;")
-  );
+  return /^application\/json(?:\s*;|$)/.test(normalizedContentType);
 }
 
 export async function parseJsonBody<T>(request: Request): Promise<T> {
