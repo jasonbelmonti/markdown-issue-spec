@@ -11,3 +11,8 @@ export {
   type StartupScanFailure,
   type StartupScanResult,
 } from "./scan-issues.ts";
+export {
+  rebuildProjectionFromCanonicalMarkdown,
+  type RebuildProjectionFromCanonicalMarkdownOptions,
+  type RebuildProjectionFromCanonicalMarkdownResult,
+} from "./rebuild-projection-from-canonical-markdown.ts";
