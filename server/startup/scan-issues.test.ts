@@ -4,7 +4,10 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { openProjectionDatabase } from "../projection/index.ts";
+import {
+  indexValidationErrors,
+  openProjectionDatabase,
+} from "../projection/index.ts";
 import {
   rejectDuplicateParsedIssueIds,
   scanIssueFilesIntoProjection,
@@ -136,6 +139,16 @@ function getIndexedIssueRows(database: ProjectionDatabase) {
     .all();
 }
 
+function getValidationErrorRows(database: ProjectionDatabase) {
+  return database
+    .query<{ file_path: string; code: string }, []>(
+      `SELECT file_path, code
+       FROM validation_errors
+       ORDER BY file_path, position`,
+    )
+    .all();
+}
+
 test("scanIssueFilesIntoProjection indexes canonical issue files in deterministic order", async () => {
   const rootDirectory = await createTemporaryRootDirectory();
   const database = openMemoryProjectionDatabase();
@@ -242,6 +255,58 @@ test("scanIssueFilesIntoProjection collects parse failures and continues indexin
   }
 });
 
+test("scanIssueFilesIntoProjection removes stale projection rows for files missing from vault/issues", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+  const database = openMemoryProjectionDatabase();
+
+  await writeIssueFile(rootDirectory, "ISSUE-0100.md", ISSUE_0100_SOURCE);
+  await writeIssueFile(rootDirectory, "ISSUE-0200.md", ISSUE_0200_SOURCE);
+
+  try {
+    await scanIssueFilesIntoProjection({
+      database,
+      rootDirectory,
+      indexedAt: FIXED_INDEXED_AT,
+    });
+
+    await Bun.file(join(rootDirectory, "vault", "issues", "ISSUE-0200.md")).delete();
+
+    indexValidationErrors(
+      database,
+      { file_path: "vault/issues/ISSUE-0200.md" },
+      [
+        {
+          code: "startup.stale_projection",
+          severity: "warning",
+          message: "This row should be removed during reconcile.",
+          file_path: "vault/issues/ISSUE-0200.md",
+        },
+      ],
+    );
+
+    const result = await scanIssueFilesIntoProjection({
+      database,
+      rootDirectory,
+      indexedAt: FIXED_INDEXED_AT,
+    });
+
+    expect(result.failures).toEqual([]);
+    expect(getIndexedIssueRows(database)).toEqual([
+      {
+        issue_id: "ISSUE-0100",
+        file_path: "vault/issues/ISSUE-0100.md",
+        revision: createRevision(ISSUE_0100_SOURCE),
+        indexed_at: FIXED_INDEXED_AT,
+        ready: 1,
+        is_blocked: 0,
+      },
+    ]);
+    expect(getValidationErrorRows(database)).toEqual([]);
+  } finally {
+    database.close();
+  }
+});
+
 test("scanIssueFilesIntoProjection rejects files whose frontmatter id does not match the filename", async () => {
   const rootDirectory = await createTemporaryRootDirectory();
   const database = openMemoryProjectionDatabase();
@@ -268,6 +333,55 @@ test("scanIssueFilesIntoProjection rejects files whose frontmatter id does not m
       },
     ]);
     expect(getIndexedIssueRows(database)).toEqual([]);
+  } finally {
+    database.close();
+  }
+});
+
+test("scanIssueFilesIntoProjection clears stale projection state when a file becomes unreadable", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+  const database = openMemoryProjectionDatabase();
+
+  await writeIssueFile(rootDirectory, "ISSUE-0100.md", ISSUE_0100_SOURCE);
+
+  try {
+    await scanIssueFilesIntoProjection({
+      database,
+      rootDirectory,
+      indexedAt: FIXED_INDEXED_AT,
+    });
+
+    indexValidationErrors(
+      database,
+      { file_path: "vault/issues/ISSUE-0100.md" },
+      [
+        {
+          code: "startup.stale_projection",
+          severity: "warning",
+          message: "This row should be removed when parsing fails.",
+          file_path: "vault/issues/ISSUE-0100.md",
+        },
+      ],
+    );
+    await writeIssueFile(rootDirectory, "ISSUE-0100.md", INVALID_ISSUE_SOURCE);
+
+    const result = await scanIssueFilesIntoProjection({
+      database,
+      rootDirectory,
+      indexedAt: FIXED_INDEXED_AT,
+    });
+
+    expect(result.issueEnvelopes).toEqual([]);
+    expect(result.failures).toEqual([
+      {
+        filePath: "vault/issues/ISSUE-0100.md",
+        message: expect.stringContaining(
+          "Markdown issue document is missing YAML frontmatter.",
+        ),
+      },
+    ]);
+    expect(getIndexedIssueRows(database)).toEqual([]);
+    expect(getValidationErrorRows(database)).toEqual([]);
   } finally {
     database.close();
   }

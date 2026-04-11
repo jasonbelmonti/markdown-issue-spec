@@ -1,7 +1,10 @@
 import type { Database } from "bun:sqlite";
 
 import type { IssueEnvelope, Rfc3339Timestamp } from "../core/types/index.ts";
-import { writeProjectionState } from "../projection/index.ts";
+import {
+  clearProjectionStateForFilePath,
+  writeProjectionState,
+} from "../projection/index.ts";
 import { listCanonicalIssueFiles } from "./issue-file-discovery.ts";
 import { scanIssueFile, toStartupRelativeFilePath } from "./scan-issue-file.ts";
 import {
@@ -27,6 +30,29 @@ export interface ScanIssuesIntoProjectionOptions {
   database: Database;
   rootDirectory: string;
   indexedAt?: Rfc3339Timestamp;
+}
+
+function listIndexedIssueFilePaths(database: Database): string[] {
+  return database
+    .query<{ file_path: string }, []>(
+      `SELECT file_path
+       FROM issues`,
+    )
+    .all()
+    .map(({ file_path: filePath }) => filePath);
+}
+
+function reconcileMissingProjectionFilePaths(
+  database: Database,
+  discoveredFilePaths: ReadonlySet<string>,
+): void {
+  for (const indexedFilePath of listIndexedIssueFilePaths(database)) {
+    if (discoveredFilePaths.has(indexedFilePath)) {
+      continue;
+    }
+
+    clearProjectionStateForFilePath(database, indexedFilePath);
+  }
 }
 
 interface DuplicateParsedIssueGroup {
@@ -105,10 +131,16 @@ export async function scanIssueFilesIntoProjection(
   const { database, rootDirectory } = options;
   const indexedAt = options.indexedAt ?? new Date().toISOString();
   const issueFilePaths = await listCanonicalIssueFiles(rootDirectory);
+  const discoveredFilePaths = new Set(
+    issueFilePaths.map((filePath) =>
+      toStartupRelativeFilePath(rootDirectory, filePath),
+    ),
+  );
   const parsedIssues: ParsedStartupIssueFile[] = [];
   const failures: StartupScanFailure[] = [];
 
   for (const filePath of issueFilePaths) {
+    const startupFilePath = toStartupRelativeFilePath(rootDirectory, filePath);
     let parsedIssue: ParsedStartupIssueFile;
 
     try {
@@ -118,8 +150,9 @@ export async function scanIssueFilesIntoProjection(
         indexedAt,
       });
     } catch (error) {
+      clearProjectionStateForFilePath(database, startupFilePath);
       failures.push({
-        filePath: toStartupRelativeFilePath(rootDirectory, filePath),
+        filePath: startupFilePath,
         message: toErrorMessage(error),
       });
       continue;
@@ -129,6 +162,12 @@ export async function scanIssueFilesIntoProjection(
 
   const duplicateRejection = rejectDuplicateParsedIssueIds(parsedIssues);
   failures.push(...duplicateRejection.failures);
+
+  for (const failure of duplicateRejection.failures) {
+    clearProjectionStateForFilePath(database, failure.filePath);
+  }
+
+  reconcileMissingProjectionFilePaths(database, discoveredFilePaths);
 
   const issuesById = new Map(
     duplicateRejection.acceptedParsedIssues.map(

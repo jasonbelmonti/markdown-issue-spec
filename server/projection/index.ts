@@ -16,3 +16,4 @@ export {
   writeProjectionState,
   type ProjectionStateWriteInput,
 } from "./write-projection-state.ts";
+export { clearProjectionStateForFilePath } from "./clear-projection-state.ts";
