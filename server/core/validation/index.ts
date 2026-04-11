@@ -13,6 +13,10 @@ export {
   IssueSemanticValidationError,
   validateIssueSemantics,
 } from "./semantic-validation.ts";
+export {
+  validateIssueGraph,
+  type GraphValidationIssue,
+} from "./validate-issue-graph.ts";
 export { evaluateIssueTransitionGuard } from "./transition-guard.ts";
 export type {
   FrontmatterValidationError,

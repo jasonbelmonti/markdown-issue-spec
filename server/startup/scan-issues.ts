@@ -1,6 +1,14 @@
 import type { Database } from "bun:sqlite";
 
-import type { IssueEnvelope, Rfc3339Timestamp } from "../core/types/index.ts";
+import type {
+  IssueEnvelope,
+  Rfc3339Timestamp,
+  ValidationError,
+} from "../core/types/index.ts";
+import {
+  validateIssueGraph,
+  type GraphValidationIssue,
+} from "../core/validation/index.ts";
 import {
   clearProjectionStateForFilePath,
   writeProjectionState,
@@ -30,6 +38,34 @@ export interface ScanIssuesIntoProjectionOptions {
   database: Database;
   rootDirectory: string;
   indexedAt?: Rfc3339Timestamp;
+}
+
+function groupValidationErrorsByFilePath(
+  validationErrors: readonly ValidationError[],
+): Map<string, ValidationError[]> {
+  const validationErrorsByFilePath = new Map<string, ValidationError[]>();
+
+  for (const validationError of validationErrors) {
+    const existingValidationErrors =
+      validationErrorsByFilePath.get(validationError.file_path) ?? [];
+
+    existingValidationErrors.push(validationError);
+    validationErrorsByFilePath.set(
+      validationError.file_path,
+      existingValidationErrors,
+    );
+  }
+
+  return validationErrorsByFilePath;
+}
+
+function buildGraphValidationIssues(
+  parsedIssues: readonly ParsedStartupIssueFile[],
+): GraphValidationIssue[] {
+  return parsedIssues.map(({ issue, source }) => ({
+    issue,
+    file_path: source.file_path,
+  }));
 }
 
 function listIndexedIssueFilePaths(database: Database): string[] {
@@ -174,6 +210,11 @@ export async function scanIssueFilesIntoProjection(
       ({ issue }) => [issue.id, issue] as const,
     ),
   );
+  const validationErrorsByFilePath = groupValidationErrorsByFilePath(
+    validateIssueGraph(
+      buildGraphValidationIssues(duplicateRejection.acceptedParsedIssues),
+    ),
+  );
   const issueEnvelopes = duplicateRejection.acceptedParsedIssues.map(
     (parsedIssue) =>
       buildStartupIssueEnvelope(
@@ -186,7 +227,8 @@ export async function scanIssueFilesIntoProjection(
   for (const issueEnvelope of issueEnvelopes) {
     writeProjectionState(database, {
       issueEnvelope,
-      validationErrors: [],
+      validationErrors:
+        validationErrorsByFilePath.get(issueEnvelope.source.file_path) ?? [],
     });
   }
 
