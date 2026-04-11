@@ -149,6 +149,32 @@ function getValidationErrorRows(database: ProjectionDatabase) {
     .all();
 }
 
+function getDetailedValidationErrorRows(database: ProjectionDatabase) {
+  return database
+    .query<
+      {
+        file_path: string;
+        position: number;
+        issue_id: string | null;
+        code: string;
+        field_path: string | null;
+        related_issue_ids_json: string | null;
+      },
+      []
+    >(
+      `SELECT
+         file_path,
+         position,
+         issue_id,
+         code,
+         field_path,
+         related_issue_ids_json
+       FROM validation_errors
+       ORDER BY file_path, position`,
+    )
+    .all();
+}
+
 test("scanIssueFilesIntoProjection indexes canonical issue files in deterministic order", async () => {
   const rootDirectory = await createTemporaryRootDirectory();
   const database = openMemoryProjectionDatabase();
@@ -212,6 +238,7 @@ test("scanIssueFilesIntoProjection indexes canonical issue files in deterministi
         is_blocked: 0,
       },
     ]);
+    expect(getValidationErrorRows(database)).toEqual([]);
   } finally {
     database.close();
   }
@@ -333,6 +360,57 @@ test("scanIssueFilesIntoProjection rejects files whose frontmatter id does not m
       },
     ]);
     expect(getIndexedIssueRows(database)).toEqual([]);
+  } finally {
+    database.close();
+  }
+});
+
+test("scanIssueFilesIntoProjection indexes graph validation errors into projection state", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+  const database = openMemoryProjectionDatabase();
+  const unresolvedReferenceIssueSource = `---
+spec_version: mis/0.1
+id: ISSUE-0600
+title: Missing graph target
+kind: task
+status: accepted
+created_at: 2026-04-10T13:00:00-05:00
+links:
+  - rel: references
+    target: ISSUE-0999
+---
+## Objective
+
+Reference an issue that does not exist yet.
+`;
+
+  await writeIssueFile(
+    rootDirectory,
+    "ISSUE-0600.md",
+    unresolvedReferenceIssueSource,
+  );
+
+  try {
+    const result = await scanIssueFilesIntoProjection({
+      database,
+      rootDirectory,
+      indexedAt: FIXED_INDEXED_AT,
+    });
+
+    expect(result.failures).toEqual([]);
+    expect(result.issueEnvelopes.map((envelope) => envelope.issue.id)).toEqual([
+      "ISSUE-0600",
+    ]);
+    expect(getDetailedValidationErrorRows(database)).toEqual([
+      {
+        file_path: "vault/issues/ISSUE-0600.md",
+        position: 0,
+        issue_id: "ISSUE-0600",
+        code: "graph.unresolved_reference",
+        field_path: "links[0].target",
+        related_issue_ids_json: "[\"ISSUE-0999\"]",
+      },
+    ]);
   } finally {
     database.close();
   }
