@@ -1,6 +1,12 @@
 export type HttpRouteMethod = "PATCH" | "POST";
 
-export type HttpRouteHandler = (request: Request) => Response | Promise<Response>;
+export interface HttpRouteRequest extends Request {
+  params?: Record<string, string>;
+}
+
+export type HttpRouteHandler = (
+  request: HttpRouteRequest,
+) => Response | Promise<Response>;
 
 export interface MutationRouteHandlers {
   createIssue: HttpRouteHandler;

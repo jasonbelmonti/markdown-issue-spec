@@ -9,6 +9,7 @@ import {
   handlePatchIssue,
 } from "./patch-issue-handler.ts";
 import { handleTransitionIssue } from "./transition-issue-handler.ts";
+import type { HttpRouteRequest } from "./types.ts";
 
 test("handleCreateIssue returns a deterministic not-implemented response", async () => {
   const response = await handleCreateIssue(
@@ -100,6 +101,42 @@ test("createPatchIssueHandler delegates to the mutation boundary with the issue 
     {
       kind: "patch_issue",
       issueId: "ISSUE-1234",
+    },
+  ]);
+  expect(response.status).toBe(501);
+});
+
+test("createPatchIssueHandler prefers the decoded route param for issue ids", async () => {
+  const commands: unknown[] = [];
+  const handler = createPatchIssueHandler({
+    async patchIssue(command) {
+      commands.push(command);
+
+      return {
+        status: "not_implemented",
+        code: "issue_patch_not_implemented",
+        endpoint: "PATCH /issues/:id",
+      } as const;
+    },
+  });
+
+  const request = Object.assign(
+    new Request("http://localhost/issues/ID%2F123", {
+      method: "PATCH",
+    }),
+    {
+      params: {
+        id: "ID/123",
+      },
+    },
+  ) as HttpRouteRequest;
+
+  const response = await handler(request);
+
+  expect(commands).toEqual([
+    {
+      kind: "patch_issue",
+      issueId: "ID/123",
     },
   ]);
   expect(response.status).toBe(501);

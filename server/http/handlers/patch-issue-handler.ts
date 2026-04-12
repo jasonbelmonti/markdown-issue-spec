@@ -3,12 +3,17 @@ import {
   type PatchIssueMutationBoundary,
 } from "../../application/mutations/issue-mutation-boundary.ts";
 import { createNotImplementedMutationResponse } from "./not-implemented-mutation-response.ts";
-import type { HttpRouteHandler } from "./types.ts";
+import type { HttpRouteHandler, HttpRouteRequest } from "./types.ts";
 
-function getIssueIdFromRequest(request: Request): string {
+function getIssueIdFromRequest(request: HttpRouteRequest): string {
+  if (request.params?.id !== undefined) {
+    return request.params.id;
+  }
+
   const pathname = new URL(request.url).pathname;
+  const encodedIssueId = pathname.split("/").at(-1) ?? "";
 
-  return pathname.split("/").at(-1) ?? "";
+  return decodeURIComponent(encodedIssueId);
 }
 
 const defaultIssueMutationBoundary = createNotImplementedIssueMutationBoundary();
@@ -16,7 +21,9 @@ const defaultIssueMutationBoundary = createNotImplementedIssueMutationBoundary()
 export function createPatchIssueHandler(
   issueMutationBoundary: PatchIssueMutationBoundary = defaultIssueMutationBoundary,
 ): HttpRouteHandler {
-  return async function handlePatchIssue(request: Request): Promise<Response> {
+  return async function handlePatchIssue(
+    request: HttpRouteRequest,
+  ): Promise<Response> {
     const result = await issueMutationBoundary.patchIssue({
       kind: "patch_issue",
       issueId: getIssueIdFromRequest(request),
