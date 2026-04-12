@@ -33,6 +33,14 @@ function createCreateIssueRequest(
   });
 }
 
+function createUnexpectedCreateIssueBoundary() {
+  return {
+    async createIssue() {
+      throw new Error("createIssue should not be called for invalid requests.");
+    },
+  };
+}
+
 test("handleCreateIssue returns a deterministic not-implemented response", async () => {
   const response = await handleCreateIssue(createCreateIssueRequest());
 
@@ -74,11 +82,7 @@ test("createCreateIssueHandler delegates to the mutation boundary", async () => 
 });
 
 test("createCreateIssueHandler returns deterministic JSON parse errors before delegation", async () => {
-  const handler = createCreateIssueHandler({
-    async createIssue() {
-      throw new Error("createIssue should not be called for invalid requests.");
-    },
-  });
+  const handler = createCreateIssueHandler(createUnexpectedCreateIssueBoundary());
 
   const response = await handler(
     new Request("http://localhost/issues", {
@@ -100,11 +104,7 @@ test("createCreateIssueHandler returns deterministic JSON parse errors before de
 });
 
 test("createCreateIssueHandler returns deterministic unsupported media type errors before delegation", async () => {
-  const handler = createCreateIssueHandler({
-    async createIssue() {
-      throw new Error("createIssue should not be called for invalid requests.");
-    },
-  });
+  const handler = createCreateIssueHandler(createUnexpectedCreateIssueBoundary());
 
   const response = await handler(
     new Request("http://localhost/issues", {

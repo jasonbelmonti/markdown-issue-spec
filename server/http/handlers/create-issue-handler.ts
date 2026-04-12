@@ -10,6 +10,12 @@ import type { HttpRouteHandler } from "./types.ts";
 
 const defaultIssueMutationBoundary = createNotImplementedIssueMutationBoundary();
 
+async function parseCreateIssueInput(
+  request: Request,
+): Promise<CreateIssueInput> {
+  return parseJsonBody<CreateIssueInput>(request);
+}
+
 export function createCreateIssueHandler(
   issueMutationBoundary: CreateIssueMutationBoundary = defaultIssueMutationBoundary,
 ): HttpRouteHandler {
@@ -17,17 +23,17 @@ export function createCreateIssueHandler(
     try {
       const result = await issueMutationBoundary.createIssue({
         kind: "create_issue",
-        input: await parseJsonBody<CreateIssueInput>(request),
+        input: await parseCreateIssueInput(request),
       });
 
       if (result.status === "not_implemented") {
         return createNotImplementedMutationResponse(result);
       }
+
+      throw new Error("Create issue mutation responses are not implemented yet.");
     } catch (error) {
       return createApiErrorResponse(error);
     }
-
-    throw new Error("Create issue mutation responses are not implemented yet.");
   };
 }
 
