@@ -1,13 +1,9 @@
-import { createHash } from "node:crypto";
 import { basename, relative, sep } from "node:path";
 
 import { parseIssueMarkdown } from "../core/parser/index.ts";
 import type { Rfc3339Timestamp } from "../core/types/index.ts";
+import { computeIssueRevision } from "../store/issue-revision.ts";
 import type { ParsedStartupIssueFile } from "./startup-envelope.ts";
-
-function hashIssueSource(source: string): string {
-  return createHash("sha256").update(source).digest("hex");
-}
 
 export function toStartupRelativeFilePath(
   rootDirectory: string,
@@ -46,7 +42,7 @@ export async function scanIssueFile(
 
   return {
     issue,
-    revision: hashIssueSource(source),
+    revision: computeIssueRevision(source),
     source: {
       file_path: toStartupRelativeFilePath(
         options.rootDirectory,
