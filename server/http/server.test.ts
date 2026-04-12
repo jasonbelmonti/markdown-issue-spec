@@ -2,6 +2,15 @@ import { expect, test } from "bun:test";
 
 import { startServer } from "./server.ts";
 
+const CREATE_ISSUE_REQUEST_BODY = {
+  spec_version: "mis/0.1",
+  title: "Bootstrap create route transport",
+  kind: "task",
+  status: "accepted",
+  created_at: "2026-04-12T09:45:00-05:00",
+  body: "## Objective\n\nKeep the create route placeholder deterministic for valid JSON.",
+} as const;
+
 async function withServer<T>(
   run: (baseUrl: string) => Promise<T>,
 ): Promise<T> {
@@ -16,7 +25,13 @@ async function withServer<T>(
 
 test("startServer recognizes the planned mutation endpoints with placeholder handlers", async () => {
   await withServer(async (baseUrl) => {
-    const createResponse = await fetch(`${baseUrl}/issues`, { method: "POST" });
+    const createResponse = await fetch(`${baseUrl}/issues`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(CREATE_ISSUE_REQUEST_BODY),
+    });
     const patchResponse = await fetch(`${baseUrl}/issues/ISSUE-1234`, {
       method: "PATCH",
     });

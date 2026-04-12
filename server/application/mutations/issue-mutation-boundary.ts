@@ -1,7 +1,9 @@
 import type { Issue, IssueRevision } from "../../core/types/index.ts";
+import type { CreateIssueInput } from "./create-issue-input.ts";
 
 export interface CreateIssueMutationCommand {
   kind: "create_issue";
+  input: CreateIssueInput;
 }
 
 export interface PatchIssueMutationCommand {
