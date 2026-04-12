@@ -1,5 +1,10 @@
-import type { Issue, IssueRevision } from "../../core/types/index.ts";
+import type {
+  Issue,
+  IssueEnvelope,
+  IssueRevision,
+} from "../../core/types/index.ts";
 import type { CreateIssueInput } from "./create-issue-input.ts";
+import type { PatchIssueInput } from "./patch-issue-input.ts";
 
 export interface CreateIssueMutationCommand {
   kind: "create_issue";
@@ -9,12 +14,21 @@ export interface CreateIssueMutationCommand {
 export interface PatchIssueMutationCommand {
   kind: "patch_issue";
   issueId: string;
+  input: PatchIssueInput;
 }
 
 export interface AppliedIssueMutationResult {
   status: "applied";
   issue: Issue;
+  envelope: IssueEnvelope;
   revision: IssueRevision;
+}
+
+export interface RevisionMismatchIssueMutationResult {
+  status: "revision_mismatch";
+  issueId: string;
+  expectedRevision: IssueRevision;
+  currentRevision: IssueRevision;
 }
 
 export interface NotImplementedIssueMutationResult {
@@ -29,6 +43,7 @@ export type CreateIssueMutationResult =
 
 export type PatchIssueMutationResult =
   | AppliedIssueMutationResult
+  | RevisionMismatchIssueMutationResult
   | NotImplementedIssueMutationResult;
 
 export interface IssueMutationBoundary {

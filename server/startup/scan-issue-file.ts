@@ -16,12 +16,30 @@ function getExpectedIssueId(filePath: string): string {
   return basename(filePath, ".md");
 }
 
+export class ScanIssueFileIdMismatchError extends Error {
+  readonly expectedIssueId: string;
+  readonly actualIssueId: string;
+  readonly filePath: string;
+
+  constructor(filePath: string, expectedIssueId: string, actualIssueId: string) {
+    super(
+      `Issue file for "${expectedIssueId}" contained mismatched frontmatter id "${actualIssueId}".`,
+    );
+    this.name = "ScanIssueFileIdMismatchError";
+    this.filePath = filePath;
+    this.expectedIssueId = expectedIssueId;
+    this.actualIssueId = actualIssueId;
+  }
+}
+
 function assertMatchingIssueId(filePath: string, actualIssueId: string): void {
   const expectedIssueId = getExpectedIssueId(filePath);
 
   if (actualIssueId !== expectedIssueId) {
-    throw new Error(
-      `Issue file for "${expectedIssueId}" contained mismatched frontmatter id "${actualIssueId}".`,
+    throw new ScanIssueFileIdMismatchError(
+      filePath,
+      expectedIssueId,
+      actualIssueId,
     );
   }
 }

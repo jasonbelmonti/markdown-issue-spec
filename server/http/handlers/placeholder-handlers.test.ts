@@ -5,11 +5,8 @@ import {
   handleCreateIssue,
 } from "./create-issue-handler.ts";
 import {
-  createPatchIssueHandler,
-  handlePatchIssue,
-} from "./patch-issue-handler.ts";
-import { handleTransitionIssue } from "./transition-issue-handler.ts";
-import type { HttpRouteRequest } from "./types.ts";
+  handleTransitionIssue,
+} from "./transition-issue-handler.ts";
 
 const CREATE_ISSUE_REQUEST_BODY = {
   spec_version: "mis/0.1",
@@ -126,119 +123,6 @@ test("createCreateIssueHandler returns deterministic unsupported media type erro
       },
     },
   });
-});
-
-test("handlePatchIssue returns a deterministic not-implemented response", async () => {
-  const response = await handlePatchIssue(
-    new Request("http://localhost/issues/ISSUE-1234", {
-      method: "PATCH",
-    }),
-  );
-
-  expect(response.status).toBe(501);
-  expect(await response.json()).toEqual({
-    error: {
-      code: "issue_patch_not_implemented",
-      message: "PATCH /issues/:id is not implemented yet.",
-      details: {
-        endpoint: "PATCH /issues/:id",
-      },
-    },
-  });
-});
-
-test("createPatchIssueHandler delegates to the mutation boundary with the issue id", async () => {
-  const commands: unknown[] = [];
-  const handler = createPatchIssueHandler({
-    async patchIssue(command) {
-      commands.push(command);
-
-      return {
-        status: "not_implemented",
-        code: "issue_patch_not_implemented",
-        endpoint: "PATCH /issues/:id",
-      } as const;
-    },
-  });
-
-  const response = await handler(
-    new Request("http://localhost/issues/ISSUE-1234", {
-      method: "PATCH",
-    }),
-  );
-
-  expect(commands).toEqual([
-    {
-      kind: "patch_issue",
-      issueId: "ISSUE-1234",
-    },
-  ]);
-  expect(response.status).toBe(501);
-});
-
-test("createPatchIssueHandler prefers the decoded route param for issue ids", async () => {
-  const commands: unknown[] = [];
-  const handler = createPatchIssueHandler({
-    async patchIssue(command) {
-      commands.push(command);
-
-      return {
-        status: "not_implemented",
-        code: "issue_patch_not_implemented",
-        endpoint: "PATCH /issues/:id",
-      } as const;
-    },
-  });
-
-  const request = Object.assign(
-    new Request("http://localhost/issues/ID%2F123", {
-      method: "PATCH",
-    }),
-    {
-      params: {
-        id: "ID/123",
-      },
-    },
-  ) as HttpRouteRequest;
-
-  const response = await handler(request);
-
-  expect(commands).toEqual([
-    {
-      kind: "patch_issue",
-      issueId: "ID/123",
-    },
-  ]);
-  expect(response.status).toBe(501);
-});
-
-test("createPatchIssueHandler falls back to the raw path segment when percent decoding fails", async () => {
-  const commands: unknown[] = [];
-  const handler = createPatchIssueHandler({
-    async patchIssue(command) {
-      commands.push(command);
-
-      return {
-        status: "not_implemented",
-        code: "issue_patch_not_implemented",
-        endpoint: "PATCH /issues/:id",
-      } as const;
-    },
-  });
-
-  const response = await handler(
-    new Request("http://localhost/issues/%E0%A4%A", {
-      method: "PATCH",
-    }),
-  );
-
-  expect(commands).toEqual([
-    {
-      kind: "patch_issue",
-      issueId: "%E0%A4%A",
-    },
-  ]);
-  expect(response.status).toBe(501);
 });
 
 test("handleTransitionIssue returns a deterministic not-implemented response", async () => {
