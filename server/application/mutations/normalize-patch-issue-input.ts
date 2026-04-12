@@ -26,6 +26,11 @@ const IMMUTABLE_PATCH_FIELD_NAMES = [
   "created_at",
   "updated_at",
 ] as const;
+const PATCH_INPUT_FIELD_NAMES = [
+  "expectedRevision",
+  ...MUTABLE_PATCH_FIELD_NAMES,
+  ...IMMUTABLE_PATCH_FIELD_NAMES,
+] as const;
 
 type MutablePatchFieldName = (typeof MUTABLE_PATCH_FIELD_NAMES)[number];
 
@@ -61,6 +66,26 @@ function createImmutableFieldValidationErrors(
   );
 }
 
+function createUnknownFieldValidationErrors(
+  input: Record<string, unknown>,
+) {
+  const allowedFieldNames = new Set(PATCH_INPUT_FIELD_NAMES);
+
+  return Object.keys(input)
+    .filter((fieldName) => !allowedFieldNames.has(fieldName))
+    .sort((left, right) => left.localeCompare(right))
+    .map((fieldName) =>
+      createPatchIssueRequestValidationError({
+        code: "patch.unknown_field",
+        path: `/${fieldName}`,
+        message: `Patch requests must not include unknown field \`${fieldName}\`.`,
+        details: {
+          field: fieldName,
+        },
+      }),
+    );
+}
+
 function normalizePatchIssueLinks(input: Record<string, unknown>) {
   if (!hasOwn(input, "links")) {
     return undefined;
@@ -84,7 +109,10 @@ function normalizePatchIssueLinks(input: Record<string, unknown>) {
 function validatePatchIssueInput(
   input: Record<string, unknown>,
 ): void {
-  const validationErrors = createImmutableFieldValidationErrors(input);
+  const validationErrors = [
+    ...createUnknownFieldValidationErrors(input),
+    ...createImmutableFieldValidationErrors(input),
+  ];
 
   if (!hasOwn(input, "expectedRevision")) {
     validationErrors.push(

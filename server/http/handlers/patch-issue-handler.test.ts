@@ -480,6 +480,46 @@ test("createPatchIssueHandler rejects immutable fields with deterministic valida
   expect(await readIssueSource(rootDirectory, EXISTING_ISSUE.id)).toBe(originalSource);
 });
 
+test("createPatchIssueHandler rejects unknown patch fields with deterministic validation errors and no write", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+  const handler = createRealPatchIssueHandler(rootDirectory, {
+    now: () => PATCH_TIMESTAMP,
+  });
+
+  await writeCanonicalIssue(rootDirectory);
+  const expectedRevision = await readIssueRevision(rootDirectory, EXISTING_ISSUE.id);
+  const originalSource = await readIssueSource(rootDirectory, EXISTING_ISSUE.id);
+
+  const response = await handler(
+    createPatchIssueRequest({
+      expectedRevision,
+      titel: "Typo should not be ignored",
+    }),
+  );
+
+  expect(response.status).toBe(422);
+  expect(await response.json()).toEqual({
+    error: {
+      code: "issue_patch_validation_failed",
+      message: "Issue patch validation failed.",
+      details: {
+        errors: [
+          {
+            code: "patch.unknown_field",
+            source: "request",
+            path: "/titel",
+            message: "Patch requests must not include unknown field `titel`.",
+            details: {
+              field: "titel",
+            },
+          },
+        ],
+      },
+    },
+  });
+  expect(await readIssueSource(rootDirectory, EXISTING_ISSUE.id)).toBe(originalSource);
+});
+
 test("createPatchIssueHandler returns deterministic schema validation failures without writing files", async () => {
   const rootDirectory = await createTemporaryRootDirectory();
   const handler = createRealPatchIssueHandler(rootDirectory, {
@@ -723,4 +763,98 @@ test("createPatchIssueHandler rejects the second concurrent write for the same e
   expect((await readIssueSource(rootDirectory, EXISTING_ISSUE.id))).toContain(
     "First concurrent write",
   );
+});
+
+test("createPatchIssueHandler serializes concurrent graph-validating writes across issues", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+  let releaseFirstPersist!: () => void;
+  const firstPersistReached = new Promise<void>((resolve) => {
+    releaseFirstPersist = resolve;
+  });
+  let beforePersistCallCount = 0;
+  const handler = createRealPatchIssueHandler(rootDirectory, {
+    now: () => PATCH_TIMESTAMP,
+    beforePersist: async () => {
+      beforePersistCallCount += 1;
+
+      if (beforePersistCallCount === 1) {
+        await firstPersistReached;
+      }
+    },
+  });
+  const store = await writeCanonicalIssue(rootDirectory, {
+    ...EXISTING_ISSUE,
+    id: "ISSUE-1000",
+    title: "Left side of the graph race",
+  });
+
+  await store.writeIssue({
+    ...EXISTING_ISSUE,
+    id: "ISSUE-2000",
+    title: "Right side of the graph race",
+  });
+
+  const leftRevision = await readIssueRevision(rootDirectory, "ISSUE-1000");
+  const rightRevision = await readIssueRevision(rootDirectory, "ISSUE-2000");
+
+  const firstResponsePromise = handler(
+    createPatchIssueRequest(
+      {
+        expectedRevision: leftRevision,
+        links: [
+          {
+            rel: "parent",
+            target: "ISSUE-2000",
+          },
+        ],
+      },
+      "ISSUE-1000",
+    ),
+  );
+
+  await Promise.resolve();
+  await Promise.resolve();
+
+  const secondResponsePromise = handler(
+    createPatchIssueRequest(
+      {
+        expectedRevision: rightRevision,
+        links: [
+          {
+            rel: "parent",
+            target: "ISSUE-1000",
+          },
+        ],
+      },
+      "ISSUE-2000",
+    ),
+  );
+
+  releaseFirstPersist();
+
+  const [firstResponse, secondResponse] = await Promise.all([
+    firstResponsePromise,
+    secondResponsePromise,
+  ]);
+
+  expect(firstResponse.status).toBe(200);
+  expect(secondResponse.status).toBe(422);
+  expect(await secondResponse.json()).toEqual({
+    error: {
+      code: "issue_patch_validation_failed",
+      message: "Issue patch validation failed.",
+      details: {
+        errors: [
+          {
+            code: "graph.parent_cycle",
+            severity: "error",
+            message: "Parent graph contains a cycle.",
+            issue_id: "ISSUE-2000",
+            file_path: "vault/issues/ISSUE-2000.md",
+            related_issue_ids: ["ISSUE-1000"],
+          },
+        ],
+      },
+    },
+  });
 });

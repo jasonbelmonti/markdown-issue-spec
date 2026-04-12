@@ -27,27 +27,24 @@ function createTimestamp(): string {
 }
 
 async function withIssueLock<T>(
-  issueLocks: Map<string, Promise<void>>,
-  issueId: string,
+  previousLock: Promise<void>,
+  replaceLock: (lock: Promise<void>) => void,
+  clearLock: (lock: Promise<void>) => void,
   run: () => Promise<T>,
 ): Promise<T> {
-  const previousLock = issueLocks.get(issueId) ?? Promise.resolve();
   let releaseLock!: () => void;
   const currentLock = new Promise<void>((resolve) => {
     releaseLock = resolve;
   });
 
-  issueLocks.set(issueId, currentLock);
+  replaceLock(currentLock);
   await previousLock;
 
   try {
     return await run();
   } finally {
     releaseLock();
-
-    if (issueLocks.get(issueId) === currentLock) {
-      issueLocks.delete(issueId);
-    }
+    clearLock(currentLock);
   }
 }
 
@@ -57,7 +54,7 @@ export function createFilesystemPatchIssueMutationBoundary(
   const { rootDirectory } = options;
   const now = options.now ?? createTimestamp;
   const beforePersist = options.beforePersist;
-  const issueLocks = new Map<string, Promise<void>>();
+  let mutationLock: Promise<void> = Promise.resolve();
 
   return {
     async patchIssue(command: PatchIssueMutationCommand) {
@@ -65,7 +62,17 @@ export function createFilesystemPatchIssueMutationBoundary(
 
       try {
         const input = normalizePatchIssueInput(command.input);
-        return await withIssueLock(issueLocks, command.issueId, async () => {
+        return await withIssueLock(
+          mutationLock,
+          (lock) => {
+            mutationLock = lock;
+          },
+          (lock) => {
+            if (mutationLock === lock) {
+              mutationLock = Promise.resolve();
+            }
+          },
+          async () => {
           const filesystemState = await loadPatchIssueFilesystemState(
             rootDirectory,
             command.issueId,
@@ -113,7 +120,8 @@ export function createFilesystemPatchIssueMutationBoundary(
             envelope,
             revision: envelope.revision,
           } as const;
-        });
+          },
+        );
       } catch (error) {
         const validationError = toPatchIssueValidationError(error);
 
