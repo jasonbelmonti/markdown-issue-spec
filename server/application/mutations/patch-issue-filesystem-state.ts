@@ -1,0 +1,131 @@
+import type {
+  Issue,
+  IssueEnvelope,
+  ValidationError,
+} from "../../core/types/index.ts";
+import { validateIssueGraph } from "../../core/validation/index.ts";
+import {
+  buildStartupIssueEnvelope,
+  listCanonicalIssueFiles,
+  scanIssueFile,
+  type ParsedStartupIssueFile,
+} from "../../startup/index.ts";
+import { FilesystemIssueStore } from "../../store/index.ts";
+
+export interface PatchIssueFilesystemState {
+  currentParsedIssue: ParsedStartupIssueFile;
+  currentParsedIssues: ParsedStartupIssueFile[];
+  store: FilesystemIssueStore;
+}
+
+async function loadParsedStartupIssues(
+  rootDirectory: string,
+  indexedAt: string,
+): Promise<ParsedStartupIssueFile[]> {
+  const issueFilePaths = await listCanonicalIssueFiles(rootDirectory);
+  const parsedIssues = await Promise.all(
+    issueFilePaths.map((filePath) =>
+      scanIssueFile({
+        rootDirectory,
+        filePath,
+        indexedAt,
+      }).catch(() => null),
+    ),
+  );
+
+  return parsedIssues.filter(
+    (parsedIssue): parsedIssue is ParsedStartupIssueFile => parsedIssue !== null,
+  );
+}
+
+export async function loadPatchIssueFilesystemState(
+  rootDirectory: string,
+  issueId: string,
+  indexedAt: string,
+): Promise<PatchIssueFilesystemState> {
+  const store = new FilesystemIssueStore({ rootDirectory });
+  const filePath = store.getIssueFilePath(issueId);
+
+  return {
+    currentParsedIssue: await scanIssueFile({
+      rootDirectory,
+      filePath,
+      indexedAt,
+    }),
+    currentParsedIssues: await loadParsedStartupIssues(rootDirectory, indexedAt),
+    store,
+  };
+}
+
+export function getPatchIssueGraphValidationErrors(
+  currentParsedIssues: readonly ParsedStartupIssueFile[],
+  candidateIssue: Issue,
+  candidateFilePath: string,
+): ValidationError[] {
+  return validateIssueGraph([
+    ...currentParsedIssues
+      .filter((parsedIssue) => parsedIssue.source.file_path !== candidateFilePath)
+      .map((parsedIssue) => ({
+        issue: parsedIssue.issue,
+        file_path: parsedIssue.source.file_path,
+      })),
+    {
+      issue: candidateIssue,
+      file_path: candidateFilePath,
+    },
+  ]).filter((error) => error.file_path === candidateFilePath);
+}
+
+function buildPatchedIssueEnvelope(
+  persistedIssue: ParsedStartupIssueFile,
+  currentParsedIssues: readonly ParsedStartupIssueFile[],
+): IssueEnvelope {
+  const parsedIssues = [
+    ...currentParsedIssues.filter(
+      (parsedIssue) =>
+        parsedIssue.source.file_path !== persistedIssue.source.file_path,
+    ),
+    persistedIssue,
+  ];
+  const issuesById = new Map(
+    parsedIssues.map((parsedIssue) => [parsedIssue.issue.id, parsedIssue.issue] as const),
+  );
+
+  return buildStartupIssueEnvelope(persistedIssue, parsedIssues, issuesById);
+}
+
+async function persistPatchedIssue(
+  store: FilesystemIssueStore,
+  rootDirectory: string,
+  issue: Issue,
+  indexedAt: string,
+): Promise<ParsedStartupIssueFile> {
+  const filePath = await store.writeIssue(issue, {
+    updatedAt: {
+      mode: "canonical_mutation",
+      timestamp: indexedAt,
+    },
+  });
+
+  return scanIssueFile({
+    rootDirectory,
+    filePath,
+    indexedAt,
+  });
+}
+
+export async function persistPatchedIssueAndBuildEnvelope(
+  state: PatchIssueFilesystemState,
+  rootDirectory: string,
+  issue: Issue,
+  indexedAt: string,
+): Promise<IssueEnvelope> {
+  const persistedIssue = await persistPatchedIssue(
+    state.store,
+    rootDirectory,
+    issue,
+    indexedAt,
+  );
+
+  return buildPatchedIssueEnvelope(persistedIssue, state.currentParsedIssues);
+}
