@@ -142,6 +142,35 @@ test("createPatchIssueHandler prefers the decoded route param for issue ids", as
   expect(response.status).toBe(501);
 });
 
+test("createPatchIssueHandler falls back to the raw path segment when percent decoding fails", async () => {
+  const commands: unknown[] = [];
+  const handler = createPatchIssueHandler({
+    async patchIssue(command) {
+      commands.push(command);
+
+      return {
+        status: "not_implemented",
+        code: "issue_patch_not_implemented",
+        endpoint: "PATCH /issues/:id",
+      } as const;
+    },
+  });
+
+  const response = await handler(
+    new Request("http://localhost/issues/%E0%A4%A", {
+      method: "PATCH",
+    }),
+  );
+
+  expect(commands).toEqual([
+    {
+      kind: "patch_issue",
+      issueId: "%E0%A4%A",
+    },
+  ]);
+  expect(response.status).toBe(501);
+});
+
 test("handleTransitionIssue returns a deterministic not-implemented response", async () => {
   const response = await handleTransitionIssue(
     new Request("http://localhost/issues/ISSUE-1234/transition", {

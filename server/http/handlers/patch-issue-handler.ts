@@ -13,7 +13,11 @@ function getIssueIdFromRequest(request: HttpRouteRequest): string {
   const pathname = new URL(request.url).pathname;
   const encodedIssueId = pathname.split("/").at(-1) ?? "";
 
-  return decodeURIComponent(encodedIssueId);
+  try {
+    return decodeURIComponent(encodedIssueId);
+  } catch {
+    return encodedIssueId;
+  }
 }
 
 const defaultIssueMutationBoundary = createNotImplementedIssueMutationBoundary();
