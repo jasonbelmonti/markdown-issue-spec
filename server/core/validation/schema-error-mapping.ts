@@ -28,6 +28,48 @@ function createSchemaError(
   };
 }
 
+function decodeJsonPointerSegment(segment: string): string {
+  return segment.replaceAll("~1", "/").replaceAll("~0", "~");
+}
+
+function readValueAtJsonPointer(
+  document: unknown,
+  path: string,
+): unknown {
+  if (path.length === 0) {
+    return document;
+  }
+
+  let currentValue: unknown = document;
+
+  for (const rawSegment of path.split("/").filter(Boolean)) {
+    const segment = decodeJsonPointerSegment(rawSegment);
+
+    if (Array.isArray(currentValue)) {
+      const index = Number(segment);
+
+      if (!Number.isInteger(index)) {
+        return undefined;
+      }
+
+      currentValue = currentValue[index];
+      continue;
+    }
+
+    if (
+      currentValue === null ||
+      typeof currentValue !== "object" ||
+      !(segment in currentValue)
+    ) {
+      return undefined;
+    }
+
+    currentValue = (currentValue as Record<string, unknown>)[segment];
+  }
+
+  return currentValue;
+}
+
 function createGenericSchemaError(error: ErrorObject): FrontmatterValidationError {
   const message =
     error.message === undefined
@@ -208,17 +250,24 @@ function mapEnumError(error: ErrorObject): FrontmatterValidationError {
   );
 }
 
-function mapConstError(error: ErrorObject): FrontmatterValidationError {
+function mapConstError(
+  error: ErrorObject,
+  frontmatter: Record<string, unknown>,
+): FrontmatterValidationError {
   const fieldName = readPointerFieldName(error.instancePath);
   const allowedValue = (error.params as { allowedValue: unknown }).allowedValue;
+  const actualValue = readValueAtJsonPointer(frontmatter, error.instancePath);
 
   if (fieldName === "spec_version") {
     return createSchemaError(
       error,
       "schema.const",
       error.instancePath,
-      `Unsupported issue spec version: ${String(error.data)}`,
-      { allowedValue },
+      `Unsupported issue spec version: ${String(actualValue)}`,
+      {
+        allowedValue,
+        actualValue,
+      },
     );
   }
 
@@ -251,7 +300,10 @@ function mapNotError(error: ErrorObject): FrontmatterValidationError {
   return createGenericSchemaError(error);
 }
 
-export function mapSchemaError(error: ErrorObject): FrontmatterValidationError {
+export function mapSchemaError(
+  error: ErrorObject,
+  frontmatter: Record<string, unknown>,
+): FrontmatterValidationError {
   switch (error.keyword) {
     case "additionalProperties":
       return mapAdditionalPropertiesError(error);
@@ -266,7 +318,7 @@ export function mapSchemaError(error: ErrorObject): FrontmatterValidationError {
     case "enum":
       return mapEnumError(error);
     case "const":
-      return mapConstError(error);
+      return mapConstError(error, frontmatter);
     case "not":
       return mapNotError(error);
     default:

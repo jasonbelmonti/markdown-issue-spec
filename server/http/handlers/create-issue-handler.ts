@@ -2,13 +2,18 @@ import {
   type CreateIssueMutationBoundary,
 } from "../../application/mutations/issue-mutation-boundary.ts";
 import type { CreateIssueInput } from "../../application/mutations/create-issue-input.ts";
-import { createNotImplementedIssueMutationBoundary } from "../../application/mutations/not-implemented-issue-mutation-boundary.ts";
+import { CreateIssueValidationError } from "../../application/mutations/create-issue-validation-error.ts";
+import { createFilesystemCreateIssueMutationBoundary } from "../../application/mutations/filesystem-create-issue-mutation-boundary.ts";
+import { createApiError } from "../errors/api-error.ts";
 import { createApiErrorResponse } from "../errors/error-response.ts";
 import { parseJsonBody } from "../request/parse-json-body.ts";
+import { jsonResponse } from "../response/json.ts";
 import { createNotImplementedMutationResponse } from "./not-implemented-mutation-response.ts";
 import type { HttpRouteHandler } from "./types.ts";
 
-const defaultIssueMutationBoundary = createNotImplementedIssueMutationBoundary();
+const defaultIssueMutationBoundary = createFilesystemCreateIssueMutationBoundary({
+  rootDirectory: process.cwd(),
+});
 
 async function parseCreateIssueInput(
   request: Request,
@@ -30,8 +35,23 @@ export function createCreateIssueHandler(
         return createNotImplementedMutationResponse(result);
       }
 
-      throw new Error("Create issue mutation responses are not implemented yet.");
+      return jsonResponse(result.envelope, {
+        status: 201,
+      });
     } catch (error) {
+      if (error instanceof CreateIssueValidationError) {
+        return createApiErrorResponse(
+          createApiError({
+            status: 422,
+            code: "issue_create_validation_failed",
+            message: "Issue create validation failed.",
+            details: {
+              errors: error.errors,
+            },
+          }),
+        );
+      }
+
       return createApiErrorResponse(error);
     }
   };

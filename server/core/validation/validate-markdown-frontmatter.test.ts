@@ -89,6 +89,37 @@ Make terminal validation explicit.
   ]);
 });
 
+test("validateMarkdownFrontmatter includes the rejected spec version in const failures", () => {
+  const frontmatter = parseMarkdownFrontmatterDocument(`---
+spec_version: mis/9.9
+id: ISSUE-0201
+title: Reject unsupported spec versions
+kind: task
+status: proposed
+created_at: 2026-03-22T10:24:00-05:00
+---
+
+## Objective
+
+Surface the rejected spec version in the validation error.
+`).frontmatter;
+
+  expect(validateMarkdownFrontmatter(frontmatter)).toEqual([
+    {
+      code: "schema.const",
+      source: "schema",
+      path: "/spec_version",
+      message: "Unsupported issue spec version: mis/9.9",
+      details: {
+        keyword: "const",
+        schemaPath: "#/properties/spec_version/const",
+        allowedValue: "mis/0.1",
+        actualValue: "mis/9.9",
+      },
+    },
+  ]);
+});
+
 test("validateMarkdownFrontmatter rejects dependency links without required_before", () => {
   const frontmatter = parseMarkdownFrontmatterDocument(`---
 spec_version: mis/0.1

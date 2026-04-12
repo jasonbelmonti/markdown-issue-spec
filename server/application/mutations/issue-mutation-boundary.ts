@@ -1,4 +1,4 @@
-import type { Issue, IssueRevision } from "../../core/types/index.ts";
+import type { Issue, IssueEnvelope, IssueRevision } from "../../core/types/index.ts";
 import type { CreateIssueInput } from "./create-issue-input.ts";
 
 export interface CreateIssueMutationCommand {
@@ -14,6 +14,7 @@ export interface PatchIssueMutationCommand {
 export interface AppliedIssueMutationResult {
   status: "applied";
   issue: Issue;
+  envelope: IssueEnvelope;
   revision: IssueRevision;
 }
 

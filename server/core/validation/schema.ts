@@ -36,7 +36,7 @@ export function validateMarkdownFrontmatterSchema(
 
   return finalizeSchemaErrors(
     (validateMarkdownFrontmatterDocument.errors ?? []).map((error: ErrorObject) =>
-      mapSchemaError(error),
+      mapSchemaError(error, frontmatter),
     ),
   );
 }

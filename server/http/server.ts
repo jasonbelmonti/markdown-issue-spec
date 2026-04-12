@@ -4,6 +4,8 @@ import { defaultMutationHandlers } from "./handlers/default-mutation-handlers.ts
 import type { HttpRouteDefinition, MutationRouteHandlers } from "./handlers/types.ts";
 import { createMutationRouteDefinitions } from "./routes/mutation-routes.ts";
 
+type BunServeOptions = Parameters<typeof Bun.serve>[0];
+
 export interface HttpServerOptions {
   hostname?: string;
   port?: number;
@@ -25,8 +27,8 @@ function createNotFoundResponse(): Response {
 
 function createBunRoutes(
   routeDefinitions: readonly HttpRouteDefinition[],
-): Bun.Serve.Options["routes"] {
-  const routes: NonNullable<Bun.Serve.Options["routes"]> = {};
+): NonNullable<BunServeOptions["routes"]> {
+  const routes: NonNullable<BunServeOptions["routes"]> = {};
 
   for (const routeDefinition of routeDefinitions) {
     const existingRoute = routes[routeDefinition.pathname];
@@ -48,7 +50,7 @@ function resolveMutationHandlers(
 
 export function startServer(
   options: HttpServerOptions = {},
-): Bun.Server {
+): ReturnType<typeof Bun.serve> {
   const hostname = options.hostname ?? DEFAULT_HOSTNAME;
   const port = options.port ?? DEFAULT_PORT;
   const routes = createBunRoutes(
@@ -57,14 +59,16 @@ export function startServer(
     ),
   );
 
-  const server = Bun.serve({
-    hostname,
-    port,
-    routes,
-    fetch() {
-      return createNotFoundResponse();
-    },
-  });
+  const server = Bun.serve(
+    {
+      hostname,
+      port,
+      routes,
+      fetch() {
+        return createNotFoundResponse();
+      },
+    } as BunServeOptions,
+  );
 
   console.log(
     `markdown-issue-spec server listening on http://${server.hostname}:${server.port}`,

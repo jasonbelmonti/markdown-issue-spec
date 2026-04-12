@@ -1,5 +1,12 @@
 import { expect, test } from "bun:test";
+import { mkdtemp, readdir } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
+import { createFilesystemCreateIssueMutationBoundary } from "../application/mutations/filesystem-create-issue-mutation-boundary.ts";
+import { createCreateIssueHandler } from "./handlers/create-issue-handler.ts";
+import { handlePatchIssue } from "./handlers/patch-issue-handler.ts";
+import { handleTransitionIssue } from "./handlers/transition-issue-handler.ts";
 import { startServer } from "./server.ts";
 
 const CREATE_ISSUE_REQUEST_BODY = {
@@ -8,13 +15,29 @@ const CREATE_ISSUE_REQUEST_BODY = {
   kind: "task",
   status: "accepted",
   created_at: "2026-04-12T09:45:00-05:00",
-  body: "## Objective\n\nKeep the create route placeholder deterministic for valid JSON.",
+  body: "## Objective\n\nKeep the create route deterministic for valid JSON.",
 } as const;
 
+async function createTemporaryRootDirectory(): Promise<string> {
+  return mkdtemp(join(tmpdir(), "markdown-issue-server-"));
+}
+
 async function withServer<T>(
+  rootDirectory: string,
   run: (baseUrl: string) => Promise<T>,
 ): Promise<T> {
-  const server = startServer({ port: 0 });
+  const server = startServer({
+    port: 0,
+    mutationHandlers: {
+      createIssue: createCreateIssueHandler(
+        createFilesystemCreateIssueMutationBoundary({
+          rootDirectory,
+        }),
+      ),
+      patchIssue: handlePatchIssue,
+      transitionIssue: handleTransitionIssue,
+    },
+  });
 
   try {
     return await run(`http://127.0.0.1:${server.port}`);
@@ -23,8 +46,10 @@ async function withServer<T>(
   }
 }
 
-test("startServer recognizes the planned mutation endpoints with placeholder handlers", async () => {
-  await withServer(async (baseUrl) => {
+test("startServer recognizes the planned mutation endpoints with a real create handler", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+
+  await withServer(rootDirectory, async (baseUrl) => {
     const createResponse = await fetch(`${baseUrl}/issues`, {
       method: "POST",
       headers: {
@@ -39,17 +64,19 @@ test("startServer recognizes the planned mutation endpoints with placeholder han
       `${baseUrl}/issues/ISSUE-1234/transition`,
       { method: "POST" },
     );
+    const createBody = await createResponse.json() as {
+      issue: { id: string };
+      source: { file_path: string };
+    };
 
-    expect(createResponse.status).toBe(501);
-    expect(await createResponse.json()).toEqual({
-      error: {
-        code: "issue_create_not_implemented",
-        message: "POST /issues is not implemented yet.",
-        details: {
-          endpoint: "POST /issues",
-        },
-      },
-    });
+    expect(createResponse.status).toBe(201);
+    expect(createBody.issue.id).toMatch(/^ISSUE-[0-9A-HJKMNP-TV-Z]{26}$/);
+    expect(createBody.source.file_path).toBe(
+      `vault/issues/${createBody.issue.id}.md`,
+    );
+    expect(await readdir(join(rootDirectory, "vault", "issues"))).toEqual([
+      `${createBody.issue.id}.md`,
+    ]);
 
     expect(patchResponse.status).toBe(501);
     expect(await patchResponse.json()).toEqual({
@@ -76,7 +103,9 @@ test("startServer recognizes the planned mutation endpoints with placeholder han
 });
 
 test("startServer keeps the structured json 404 fallback for unmatched routes", async () => {
-  await withServer(async (baseUrl) => {
+  const rootDirectory = await createTemporaryRootDirectory();
+
+  await withServer(rootDirectory, async (baseUrl) => {
     const response = await fetch(`${baseUrl}/missing`);
 
     expect(response.status).toBe(404);
