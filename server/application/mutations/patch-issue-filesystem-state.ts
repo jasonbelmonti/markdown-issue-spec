@@ -11,6 +11,7 @@ import {
   type ParsedStartupIssueFile,
 } from "../../startup/index.ts";
 import { FilesystemIssueStore } from "../../store/index.ts";
+import { PatchIssueNotFoundError } from "./patch-issue-not-found-error.ts";
 
 export interface PatchIssueFilesystemState {
   currentParsedIssue: ParsedStartupIssueFile;
@@ -45,13 +46,24 @@ export async function loadPatchIssueFilesystemState(
 ): Promise<PatchIssueFilesystemState> {
   const store = new FilesystemIssueStore({ rootDirectory });
   const filePath = store.getIssueFilePath(issueId);
+  let currentParsedIssue: ParsedStartupIssueFile;
 
-  return {
-    currentParsedIssue: await scanIssueFile({
+  try {
+    currentParsedIssue = await scanIssueFile({
       rootDirectory,
       filePath,
       indexedAt,
-    }),
+    });
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+      throw new PatchIssueNotFoundError(issueId);
+    }
+
+    throw error;
+  }
+
+  return {
+    currentParsedIssue,
     currentParsedIssues: await loadParsedStartupIssues(rootDirectory, indexedAt),
     store,
   };

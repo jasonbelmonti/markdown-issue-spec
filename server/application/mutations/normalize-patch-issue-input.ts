@@ -173,6 +173,19 @@ export function normalizePatchIssueInput(
 
   validatePatchIssueInput(input);
 
+  const providedFields = collectProvidedFields(input);
+
+  if (providedFields.size === 0) {
+    throw new PatchIssueValidationError([
+      createPatchIssueRequestValidationError({
+        code: "patch.no_changes_requested",
+        path: "/",
+        message:
+          "Patch requests must include at least one mutable field in addition to `expectedRevision`.",
+      }),
+    ]);
+  }
+
   return {
     expectedRevision: input.expectedRevision,
     ...(hasOwn(input, "title") ? { title: input.title } : {}),
@@ -188,6 +201,6 @@ export function normalizePatchIssueInput(
     ...(hasOwn(input, "links")
       ? { links: normalizePatchIssueLinks(input) }
       : {}),
-    providedFields: collectProvidedFields(input),
+    providedFields,
   };
 }

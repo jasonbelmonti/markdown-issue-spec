@@ -3,6 +3,7 @@ import {
 } from "../../application/mutations/issue-mutation-boundary.ts";
 import { createFilesystemPatchIssueMutationBoundary } from "../../application/mutations/filesystem-patch-issue-mutation-boundary.ts";
 import type { PatchIssueInput } from "../../application/mutations/patch-issue-input.ts";
+import { PatchIssueNotFoundError } from "../../application/mutations/patch-issue-not-found-error.ts";
 import { PatchIssueValidationError } from "../../application/mutations/patch-issue-validation-error.ts";
 import { createApiError } from "../errors/api-error.ts";
 import { createApiErrorResponse } from "../errors/error-response.ts";
@@ -71,16 +72,31 @@ function createPatchValidationErrorResponse(
   );
 }
 
+function createIssueNotFoundResponse(issueId: string): Response {
+  return createApiErrorResponse(
+    createApiError({
+      status: 404,
+      code: "issue_not_found",
+      message: "The requested issue was not found.",
+      details: {
+        issueId,
+      },
+    }),
+  );
+}
+
 export function createPatchIssueHandler(
   issueMutationBoundary: PatchIssueMutationBoundary = defaultIssueMutationBoundary,
 ): HttpRouteHandler {
   return async function handlePatchIssue(
     request: HttpRouteRequest,
   ): Promise<Response> {
+    const issueId = getIssueIdFromRequest(request);
+
     try {
       const result = await issueMutationBoundary.patchIssue({
         kind: "patch_issue",
-        issueId: getIssueIdFromRequest(request),
+        issueId,
         input: await parsePatchIssueInput(request),
       });
 
@@ -96,6 +112,10 @@ export function createPatchIssueHandler(
     } catch (error) {
       if (error instanceof PatchIssueValidationError) {
         return createPatchValidationErrorResponse(error);
+      }
+
+      if (error instanceof PatchIssueNotFoundError) {
+        return createIssueNotFoundResponse(error.issueId);
       }
 
       return createApiErrorResponse(error);

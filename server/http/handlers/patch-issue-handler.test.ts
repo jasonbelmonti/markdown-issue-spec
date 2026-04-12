@@ -520,6 +520,84 @@ test("createPatchIssueHandler rejects unknown patch fields with deterministic va
   expect(await readIssueSource(rootDirectory, EXISTING_ISSUE.id)).toBe(originalSource);
 });
 
+test("createPatchIssueHandler rejects request bodies that do not change any mutable fields", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+  const handler = createRealPatchIssueHandler(rootDirectory, {
+    now: () => PATCH_TIMESTAMP,
+  });
+
+  await writeCanonicalIssue(rootDirectory);
+  const expectedRevision = await readIssueRevision(rootDirectory, EXISTING_ISSUE.id);
+  const originalSource = await readIssueSource(rootDirectory, EXISTING_ISSUE.id);
+
+  const response = await handler(
+    createPatchIssueRequest({
+      expectedRevision,
+    }),
+  );
+
+  expect(response.status).toBe(422);
+  expect(await response.json()).toEqual({
+    error: {
+      code: "issue_patch_validation_failed",
+      message: "Issue patch validation failed.",
+      details: {
+        errors: [
+          {
+            code: "patch.no_changes_requested",
+            source: "request",
+            path: "/",
+            message:
+              "Patch requests must include at least one mutable field in addition to `expectedRevision`.",
+          },
+        ],
+      },
+    },
+  });
+  expect(await readIssueSource(rootDirectory, EXISTING_ISSUE.id)).toBe(originalSource);
+});
+
+test("createPatchIssueHandler rejects resolution-only patches when the issue remains non-terminal", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+  const handler = createRealPatchIssueHandler(rootDirectory, {
+    now: () => PATCH_TIMESTAMP,
+  });
+
+  await writeCanonicalIssue(rootDirectory);
+  const expectedRevision = await readIssueRevision(rootDirectory, EXISTING_ISSUE.id);
+  const originalSource = await readIssueSource(rootDirectory, EXISTING_ISSUE.id);
+
+  const response = await handler(
+    createPatchIssueRequest({
+      expectedRevision,
+      resolution: "duplicate",
+    }),
+  );
+
+  expect(response.status).toBe(422);
+  expect(await response.json()).toEqual({
+    error: {
+      code: "issue_patch_validation_failed",
+      message: "Issue patch validation failed.",
+      details: {
+        errors: [
+          {
+            code: "patch.non_terminal_resolution",
+            source: "request",
+            path: "/resolution",
+            message:
+              "Patch requests must not include `resolution` when the issue status remains `accepted`.",
+            details: {
+              status: "accepted",
+            },
+          },
+        ],
+      },
+    },
+  });
+  expect(await readIssueSource(rootDirectory, EXISTING_ISSUE.id)).toBe(originalSource);
+});
+
 test("createPatchIssueHandler returns deterministic schema validation failures without writing files", async () => {
   const rootDirectory = await createTemporaryRootDirectory();
   const handler = createRealPatchIssueHandler(rootDirectory, {
@@ -699,6 +777,34 @@ created_at: definitely-not-a-timestamp
   expect((await store.readIssue(EXISTING_ISSUE.id)).summary).toBe(
     "Patched despite unrelated broken files",
   );
+});
+
+test("createPatchIssueHandler maps missing canonical issues to 404 responses", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+  const handler = createRealPatchIssueHandler(rootDirectory, {
+    now: () => PATCH_TIMESTAMP,
+  });
+
+  const response = await handler(
+    createPatchIssueRequest(
+      {
+        expectedRevision: "missing-revision",
+        title: "This issue does not exist",
+      },
+      "ISSUE-404",
+    ),
+  );
+
+  expect(response.status).toBe(404);
+  expect(await response.json()).toEqual({
+    error: {
+      code: "issue_not_found",
+      message: "The requested issue was not found.",
+      details: {
+        issueId: "ISSUE-404",
+      },
+    },
+  });
 });
 
 test("createPatchIssueHandler rejects the second concurrent write for the same expected revision", async () => {
