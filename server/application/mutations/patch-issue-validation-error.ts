@@ -16,10 +16,19 @@ export interface PatchIssueRequestValidationError {
   details?: Record<string, unknown>;
 }
 
+export interface PatchIssueCanonicalValidationError {
+  code: string;
+  source: "canonical";
+  path: string;
+  message: string;
+  details?: Record<string, unknown>;
+}
+
 export type PatchIssueValidationDetail =
   | FrontmatterValidationError
   | SemanticValidationError
   | ValidationError
+  | PatchIssueCanonicalValidationError
   | PatchIssueRequestValidationError;
 
 export class PatchIssueValidationError extends Error {
@@ -38,6 +47,15 @@ export function createPatchIssueRequestValidationError(
   return {
     ...input,
     source: "request",
+  };
+}
+
+export function createPatchIssueCanonicalValidationError(
+  input: Omit<PatchIssueCanonicalValidationError, "source">,
+): PatchIssueCanonicalValidationError {
+  return {
+    ...input,
+    source: "canonical",
   };
 }
 

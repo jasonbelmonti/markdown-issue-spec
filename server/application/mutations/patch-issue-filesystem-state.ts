@@ -8,12 +8,15 @@ import {
   buildStartupIssueEnvelope,
   listCanonicalIssueFiles,
   scanIssueFile,
+  ScanIssueFileIdMismatchError,
+  toStartupRelativeFilePath,
   type ParsedStartupIssueFile,
 } from "../../startup/index.ts";
 import { FilesystemIssueStore } from "../../store/index.ts";
 import { UnsafeIssueIdError } from "../../store/issue-file-path.ts";
 import { PatchIssueNotFoundError } from "./patch-issue-not-found-error.ts";
 import {
+  createPatchIssueCanonicalValidationError,
   createPatchIssueRequestValidationError,
   PatchIssueValidationError,
 } from "./patch-issue-validation-error.ts";
@@ -81,6 +84,20 @@ export async function loadPatchIssueFilesystemState(
   } catch (error) {
     if (error instanceof Error && "code" in error && error.code === "ENOENT") {
       throw new PatchIssueNotFoundError(issueId);
+    }
+
+    if (error instanceof ScanIssueFileIdMismatchError) {
+      throw new PatchIssueValidationError([
+        createPatchIssueCanonicalValidationError({
+          code: "patch.target_issue_invalid",
+          path: toStartupRelativeFilePath(rootDirectory, filePath),
+          message: error.message,
+          details: {
+            issueId,
+            actualIssueId: error.actualIssueId,
+          },
+        }),
+      ]);
     }
 
     throw error;

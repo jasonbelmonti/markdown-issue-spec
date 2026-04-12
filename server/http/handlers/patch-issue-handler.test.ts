@@ -825,6 +825,52 @@ created_at: definitely-not-a-timestamp
   );
 });
 
+test("createPatchIssueHandler returns deterministic validation failures for malformed target canonical issues", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+  const handler = createRealPatchIssueHandler(rootDirectory, {
+    now: () => PATCH_TIMESTAMP,
+  });
+  const store = await writeCanonicalIssue(rootDirectory);
+  const filePath = store.getIssueFilePath(EXISTING_ISSUE.id);
+  const tamperedSource = (await readFile(filePath, "utf8")).replace(
+    "id: ISSUE-1234",
+    "id: ISSUE-9999",
+  );
+
+  await writeFile(filePath, tamperedSource);
+
+  const response = await handler(
+    createPatchIssueRequest({
+      expectedRevision: "tampered-revision",
+      summary: "Should not patch a malformed canonical file",
+    }),
+  );
+
+  expect(response.status).toBe(422);
+  expect(await response.json()).toEqual({
+    error: {
+      code: "issue_patch_validation_failed",
+      message: "Issue patch validation failed.",
+      details: {
+        errors: [
+          {
+            code: "patch.target_issue_invalid",
+            source: "canonical",
+            path: "vault/issues/ISSUE-1234.md",
+            message:
+              'Issue file for "ISSUE-1234" contained mismatched frontmatter id "ISSUE-9999".',
+            details: {
+              issueId: "ISSUE-1234",
+              actualIssueId: "ISSUE-9999",
+            },
+          },
+        ],
+      },
+    },
+  });
+  expect(await readFile(filePath, "utf8")).toBe(tamperedSource);
+});
+
 test("createPatchIssueHandler maps missing canonical issues to 404 responses", async () => {
   const rootDirectory = await createTemporaryRootDirectory();
   const handler = createRealPatchIssueHandler(rootDirectory, {
