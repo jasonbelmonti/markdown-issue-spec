@@ -871,6 +871,73 @@ test("createPatchIssueHandler returns deterministic validation failures for malf
   expect(await readFile(filePath, "utf8")).toBe(tamperedSource);
 });
 
+test("createPatchIssueHandler returns deterministic validation failures for target files with invalid YAML frontmatter", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+  const handler = createRealPatchIssueHandler(rootDirectory, {
+    now: () => PATCH_TIMESTAMP,
+  });
+  const store = await writeCanonicalIssue(rootDirectory);
+  const filePath = store.getIssueFilePath(EXISTING_ISSUE.id);
+  const malformedSource = `---
+spec_version: mis/0.1
+id: ISSUE-1234
+title: Broken frontmatter
+kind: task
+status: accepted
+created_at: 2026-04-12T09:45:00-05:00
+labels: [unterminated
+---
+`;
+
+  await writeFile(filePath, malformedSource);
+
+  const response = await handler(
+    createPatchIssueRequest({
+      expectedRevision: "broken-revision",
+      summary: "Should not patch invalid YAML",
+    }),
+  );
+  const responseBody = await response.json() as {
+    error: {
+      code: string;
+      message: string;
+      details: {
+        errors: Array<{
+          code: string;
+          source: string;
+          path: string;
+          message: string;
+          details?: Record<string, unknown>;
+        }>;
+      };
+    };
+  };
+
+  expect(response.status).toBe(422);
+  expect(responseBody).toMatchObject({
+    error: {
+      code: "issue_patch_validation_failed",
+      message: "Issue patch validation failed.",
+      details: {
+        errors: [
+          {
+            code: "patch.target_issue_invalid",
+            source: "canonical",
+            path: "vault/issues/ISSUE-1234.md",
+            details: {
+              issueId: "ISSUE-1234",
+            },
+          },
+        ],
+      },
+    },
+  });
+  expect(responseBody.error.details.errors[0]?.message).toContain(
+    "Failed to parse YAML frontmatter:",
+  );
+  expect(await readFile(filePath, "utf8")).toBe(malformedSource);
+});
+
 test("createPatchIssueHandler maps missing canonical issues to 404 responses", async () => {
   const rootDirectory = await createTemporaryRootDirectory();
   const handler = createRealPatchIssueHandler(rootDirectory, {

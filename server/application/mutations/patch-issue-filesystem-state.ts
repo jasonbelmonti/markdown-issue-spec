@@ -19,6 +19,7 @@ import {
   createPatchIssueCanonicalValidationError,
   createPatchIssueRequestValidationError,
   PatchIssueValidationError,
+  toPatchIssueValidationError,
 } from "./patch-issue-validation-error.ts";
 
 export interface PatchIssueFilesystemState {
@@ -95,6 +96,25 @@ export async function loadPatchIssueFilesystemState(
           details: {
             issueId,
             actualIssueId: error.actualIssueId,
+          },
+        }),
+      ]);
+    }
+
+    const validationError = toPatchIssueValidationError(error);
+
+    if (validationError !== undefined) {
+      throw validationError;
+    }
+
+    if (error instanceof Error) {
+      throw new PatchIssueValidationError([
+        createPatchIssueCanonicalValidationError({
+          code: "patch.target_issue_invalid",
+          path: toStartupRelativeFilePath(rootDirectory, filePath),
+          message: error.message,
+          details: {
+            issueId,
           },
         }),
       ]);
