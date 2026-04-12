@@ -40,18 +40,6 @@ export interface IssueMutationBoundary {
   ): Promise<PatchIssueMutationResult>;
 }
 
-const CREATE_ISSUE_NOT_IMPLEMENTED_RESULT = {
-  status: "not_implemented",
-  code: "issue_create_not_implemented",
-  endpoint: "POST /issues",
-} as const satisfies NotImplementedIssueMutationResult;
-
-const PATCH_ISSUE_NOT_IMPLEMENTED_RESULT = {
-  status: "not_implemented",
-  code: "issue_patch_not_implemented",
-  endpoint: "PATCH /issues/:id",
-} as const satisfies NotImplementedIssueMutationResult;
-
 export type CreateIssueMutationBoundary = Pick<
   IssueMutationBoundary,
   "createIssue"
@@ -61,15 +49,3 @@ export type PatchIssueMutationBoundary = Pick<
   IssueMutationBoundary,
   "patchIssue"
 >;
-
-export function createNotImplementedIssueMutationBoundary(): IssueMutationBoundary {
-  return {
-    async createIssue(_command) {
-      return CREATE_ISSUE_NOT_IMPLEMENTED_RESULT;
-    },
-
-    async patchIssue(_command) {
-      return PATCH_ISSUE_NOT_IMPLEMENTED_RESULT;
-    },
-  };
-}

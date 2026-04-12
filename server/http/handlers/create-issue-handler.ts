@@ -1,8 +1,8 @@
 import {
-  createNotImplementedIssueMutationBoundary,
   type CreateIssueMutationBoundary,
 } from "../../application/mutations/issue-mutation-boundary.ts";
 import type { CreateIssueInput } from "../../application/mutations/create-issue-input.ts";
+import { createNotImplementedIssueMutationBoundary } from "../../application/mutations/not-implemented-issue-mutation-boundary.ts";
 import { createApiErrorResponse } from "../errors/error-response.ts";
 import { parseJsonBody } from "../request/parse-json-body.ts";
 import { createNotImplementedMutationResponse } from "./not-implemented-mutation-response.ts";
