@@ -10,6 +10,7 @@ Documentation lives under `docs/`:
 - `docs/examples/`
 - `docs/fixtures/`
 - `docs/plans/`
+- `docs/plans/deployment-thin-path.md`
 
 To install dependencies:
 
