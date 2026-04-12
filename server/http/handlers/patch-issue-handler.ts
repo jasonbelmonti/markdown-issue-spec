@@ -1,7 +1,7 @@
 import {
-  createNotImplementedIssueMutationBoundary,
   type PatchIssueMutationBoundary,
 } from "../../application/mutations/issue-mutation-boundary.ts";
+import { createNotImplementedIssueMutationBoundary } from "../../application/mutations/not-implemented-issue-mutation-boundary.ts";
 import { createNotImplementedMutationResponse } from "./not-implemented-mutation-response.ts";
 import type { HttpRouteHandler, HttpRouteRequest } from "./types.ts";
 
