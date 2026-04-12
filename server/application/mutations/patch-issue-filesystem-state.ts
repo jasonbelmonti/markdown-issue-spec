@@ -11,7 +11,12 @@ import {
   type ParsedStartupIssueFile,
 } from "../../startup/index.ts";
 import { FilesystemIssueStore } from "../../store/index.ts";
+import { UnsafeIssueIdError } from "../../store/issue-file-path.ts";
 import { PatchIssueNotFoundError } from "./patch-issue-not-found-error.ts";
+import {
+  createPatchIssueRequestValidationError,
+  PatchIssueValidationError,
+} from "./patch-issue-validation-error.ts";
 
 export interface PatchIssueFilesystemState {
   currentParsedIssue: ParsedStartupIssueFile;
@@ -45,8 +50,27 @@ export async function loadPatchIssueFilesystemState(
   indexedAt: string,
 ): Promise<PatchIssueFilesystemState> {
   const store = new FilesystemIssueStore({ rootDirectory });
-  const filePath = store.getIssueFilePath(issueId);
+  let filePath: string;
   let currentParsedIssue: ParsedStartupIssueFile;
+
+  try {
+    filePath = store.getIssueFilePath(issueId);
+  } catch (error) {
+    if (error instanceof UnsafeIssueIdError) {
+      throw new PatchIssueValidationError([
+        createPatchIssueRequestValidationError({
+          code: "patch.invalid_issue_id",
+          path: "/id",
+          message: error.message,
+          details: {
+            issueId: error.issueId,
+          },
+        }),
+      ]);
+    }
+
+    throw error;
+  }
 
   try {
     currentParsedIssue = await scanIssueFile({

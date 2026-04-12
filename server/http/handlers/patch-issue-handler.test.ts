@@ -270,6 +270,52 @@ test("createPatchIssueHandler returns deterministic unsupported media type error
   });
 });
 
+test("createPatchIssueHandler maps invalid issue ids to deterministic validation errors", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+  const handler = createRealPatchIssueHandler(rootDirectory, {
+    now: () => PATCH_TIMESTAMP,
+  });
+
+  const response = await handler(
+    Object.assign(
+      createPatchIssueRequest(
+        {
+          expectedRevision: "revision-1",
+          title: "Should not write",
+        },
+        "ID/123",
+      ),
+      {
+        params: {
+          id: "ID/123",
+        },
+      },
+    ) as HttpRouteRequest,
+  );
+
+  expect(response.status).toBe(422);
+  expect(await response.json()).toEqual({
+    error: {
+      code: "issue_patch_validation_failed",
+      message: "Issue patch validation failed.",
+      details: {
+        errors: [
+          {
+            code: "patch.invalid_issue_id",
+            source: "request",
+            path: "/id",
+            message:
+              'Issue id "ID/123" cannot contain path separators when building filesystem paths.',
+            details: {
+              issueId: "ID/123",
+            },
+          },
+        ],
+      },
+    },
+  });
+});
+
 test("createPatchIssueHandler maps revision mismatches to deterministic 409 responses", async () => {
   const handler = createPatchIssueHandler({
     async patchIssue() {
