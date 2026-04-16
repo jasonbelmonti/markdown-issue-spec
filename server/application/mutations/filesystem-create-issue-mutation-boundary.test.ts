@@ -220,6 +220,28 @@ test("createFilesystemCreateIssueMutationBoundary rejects malformed links payloa
   await expectNoIssueFiles(rootDirectory);
 });
 
+test("createFilesystemCreateIssueMutationBoundary rejects non-string bodies as request validation failures", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+  const boundary = createCreateIssueBoundary(rootDirectory);
+
+  await expectSingleCreateValidationError(
+    boundary.createIssue({
+      kind: "create_issue",
+      input: {
+        ...CREATE_ISSUE_COMMAND.input,
+        body: 123,
+      } as unknown as typeof CREATE_ISSUE_COMMAND.input,
+    }),
+    {
+      code: "create.invalid_body",
+      source: "request",
+      path: "/body",
+      message: "Create `body` must be a string when present.",
+    },
+  );
+  await expectNoIssueFiles(rootDirectory);
+});
+
 test("createFilesystemCreateIssueMutationBoundary rejects non-object payloads as request validation failures", async () => {
   const rootDirectory = await createTemporaryRootDirectory();
   const boundary = createCreateIssueBoundary(rootDirectory);
@@ -383,5 +405,45 @@ test("createFilesystemCreateIssueMutationBoundary rejects graph validation failu
   );
   expect(await readdir(join(rootDirectory, "vault", "issues"))).toEqual([
     "ISSUE-0100.md",
+  ]);
+});
+
+test("createFilesystemCreateIssueMutationBoundary rejects create id collisions without overwriting the canonical file", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+  const conflictingIssueId = "ISSUE-00000000000000000000000011";
+  const store = new FilesystemIssueStore({ rootDirectory });
+  const boundary = createCreateIssueBoundary(rootDirectory, {
+    issueIdGenerator: () => conflictingIssueId,
+  });
+
+  await store.writeIssue({
+    spec_version: "mis/0.1",
+    id: conflictingIssueId,
+    title: "Existing canonical issue",
+    kind: "task",
+    status: "accepted",
+    created_at: "2026-04-14T10:00:00-05:00",
+    body: "## Objective\n\nDo not overwrite me.\n",
+  });
+
+  await expectSingleCreateValidationError(
+    boundary.createIssue(CREATE_ISSUE_COMMAND),
+    {
+      code: "create.issue_id_conflict",
+      source: "canonical",
+      path: `vault/issues/${conflictingIssueId}.md`,
+      message: `Cannot create issue because canonical file already exists for "${conflictingIssueId}".`,
+      details: {
+        issueId: conflictingIssueId,
+      },
+    },
+  );
+  expect(await store.readIssue(conflictingIssueId)).toMatchObject({
+    id: conflictingIssueId,
+    title: "Existing canonical issue",
+    body: "## Objective\n\nDo not overwrite me.\n",
+  });
+  expect(await readdir(join(rootDirectory, "vault", "issues"))).toEqual([
+    `${conflictingIssueId}.md`,
   ]);
 });

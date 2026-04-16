@@ -1,78 +1,14 @@
-import { normalizeIssueLinks, parseIssueMarkdown } from "../../core/parser/index.ts";
+import { parseIssueMarkdown } from "../../core/parser/index.ts";
 import { serializeIssueMarkdown } from "../../core/serialize/index.ts";
 import type { Issue } from "../../core/types/index.ts";
 import type { CreateIssueInput } from "./create-issue-input.ts";
 import { DEFAULT_CREATE_ISSUE_BODY } from "./create-issue-default-body.ts";
 import {
-  createCreateIssueRequestValidationFailure,
-} from "./create-issue-validation-error.ts";
+  normalizeCreateIssueInput,
+  type NormalizedCreateIssueInput,
+} from "./normalize-create-issue-input.ts";
 
-function createCreateInputValidationFailure(
-  code: string,
-  path: string,
-  message: string,
-  details?: Record<string, unknown>,
-) {
-  return createCreateIssueRequestValidationFailure({
-    code,
-    path,
-    message,
-    ...(details === undefined ? {} : { details }),
-  });
-}
-
-function assertCreateIssueInputRecord(input: CreateIssueInput): void {
-  if (typeof input === "object" && input !== null && !Array.isArray(input)) {
-    return;
-  }
-
-  throw createCreateInputValidationFailure(
-    "create.invalid_payload",
-    "/",
-    "Create issue input must be a JSON object.",
-  );
-}
-
-function parseNormalizedLinkErrorIndex(message: string): number | undefined {
-  const normalizedLinkMatch = /^Failed to normalize link at index (\d+): /.exec(message);
-
-  if (normalizedLinkMatch === null) {
-    return undefined;
-  }
-
-  return Number(normalizedLinkMatch[1]);
-}
-
-function normalizeCreateIssueLinks(
-  links: CreateIssueInput["links"],
-): Issue["links"] | undefined {
-  try {
-    return normalizeIssueLinks(links);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const linkIndex = parseNormalizedLinkErrorIndex(message);
-
-    if (linkIndex !== undefined) {
-      throw createCreateInputValidationFailure(
-        "create.invalid_links",
-        `/links/${linkIndex}`,
-        message,
-        { index: linkIndex },
-      );
-    }
-
-    throw createCreateInputValidationFailure(
-      "create.invalid_links",
-      "/links",
-      message,
-    );
-  }
-}
-
-function buildIssueBase(input: CreateIssueInput, issueId: string) {
-  assertCreateIssueInputRecord(input);
-  const normalizedLinks = normalizeCreateIssueLinks(input.links);
-
+function buildIssueBase(input: NormalizedCreateIssueInput, issueId: string) {
   return {
     spec_version: input.spec_version,
     id: issueId,
@@ -85,12 +21,15 @@ function buildIssueBase(input: CreateIssueInput, issueId: string) {
     ...(input.priority !== undefined ? { priority: input.priority } : {}),
     ...(input.labels !== undefined ? { labels: input.labels } : {}),
     ...(input.assignees !== undefined ? { assignees: input.assignees } : {}),
-    ...(normalizedLinks !== undefined ? { links: normalizedLinks } : {}),
+    ...(input.links !== undefined ? { links: input.links } : {}),
     ...(input.extensions !== undefined ? { extensions: input.extensions } : {}),
   };
 }
 
-function buildCandidateIssue(input: CreateIssueInput, issueId: string): Issue {
+function buildCandidateIssue(
+  input: NormalizedCreateIssueInput,
+  issueId: string,
+): Issue {
   const issueBase = buildIssueBase(input, issueId);
 
   switch (input.status) {
@@ -118,7 +57,9 @@ export function parseCreateIssueCandidate(
   input: CreateIssueInput,
   issueId: string,
 ): Issue {
+  const normalizedInput = normalizeCreateIssueInput(input);
+
   return parseIssueMarkdown(
-    serializeIssueMarkdown(buildCandidateIssue(input, issueId)),
+    serializeIssueMarkdown(buildCandidateIssue(normalizedInput, issueId)),
   );
 }

@@ -1,3 +1,5 @@
+import { access } from "node:fs/promises";
+
 import type {
   Issue,
   IssueEnvelope,
@@ -12,6 +14,10 @@ import {
   type ParsedStartupIssueFile,
 } from "../../startup/index.ts";
 import { FilesystemIssueStore } from "../../store/index.ts";
+import {
+  createCreateIssueCanonicalValidationError,
+  CreateIssueValidationError,
+} from "./create-issue-validation-error.ts";
 
 export interface CreateIssueFilesystemState {
   currentParsedIssues: ParsedStartupIssueFile[];
@@ -39,19 +45,54 @@ async function loadParsedStartupIssues(
   );
 }
 
+function isMissingFileError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && "code" in error && error.code === "ENOENT";
+}
+
+async function assertCreateIssueIdAvailable(
+  store: FilesystemIssueStore,
+  rootDirectory: string,
+  issueId: string,
+): Promise<string> {
+  const candidateFilePath = store.getIssueFilePath(issueId);
+
+  try {
+    await access(candidateFilePath);
+  } catch (error) {
+    if (isMissingFileError(error)) {
+      return candidateFilePath;
+    }
+
+    throw error;
+  }
+
+  throw new CreateIssueValidationError([
+    createCreateIssueCanonicalValidationError({
+      code: "create.issue_id_conflict",
+      path: toStartupRelativeFilePath(rootDirectory, candidateFilePath),
+      message: `Cannot create issue because canonical file already exists for "${issueId}".`,
+      details: {
+        issueId,
+      },
+    }),
+  ]);
+}
+
 export async function loadCreateIssueFilesystemState(
   rootDirectory: string,
   issueId: string,
   indexedAt: string,
 ): Promise<CreateIssueFilesystemState> {
   const store = new FilesystemIssueStore({ rootDirectory });
+  const candidateFilePath = await assertCreateIssueIdAvailable(
+    store,
+    rootDirectory,
+    issueId,
+  );
 
   return {
     currentParsedIssues: await loadParsedStartupIssues(rootDirectory, indexedAt),
-    candidateFilePath: toStartupRelativeFilePath(
-      rootDirectory,
-      store.getIssueFilePath(issueId),
-    ),
+    candidateFilePath: toStartupRelativeFilePath(rootDirectory, candidateFilePath),
     store,
   };
 }

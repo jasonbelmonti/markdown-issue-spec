@@ -16,11 +16,20 @@ export interface CreateIssueRequestValidationError {
   details?: Record<string, unknown>;
 }
 
+export interface CreateIssueCanonicalValidationError {
+  code: string;
+  source: "canonical";
+  path: string;
+  message: string;
+  details?: Record<string, unknown>;
+}
+
 export type CreateIssueValidationDetail =
   | FrontmatterValidationError
   | SemanticValidationError
   | ValidationError
-  | CreateIssueRequestValidationError;
+  | CreateIssueRequestValidationError
+  | CreateIssueCanonicalValidationError;
 
 export class CreateIssueValidationError extends Error {
   readonly errors: readonly CreateIssueValidationDetail[];
@@ -47,6 +56,15 @@ export function createCreateIssueRequestValidationFailure(
   return new CreateIssueValidationError([
     createCreateIssueRequestValidationError(input),
   ]);
+}
+
+export function createCreateIssueCanonicalValidationError(
+  input: Omit<CreateIssueCanonicalValidationError, "source">,
+): CreateIssueCanonicalValidationError {
+  return {
+    ...input,
+    source: "canonical",
+  };
 }
 
 export function toCreateIssueValidationError(
