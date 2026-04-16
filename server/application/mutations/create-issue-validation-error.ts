@@ -41,6 +41,14 @@ export function createCreateIssueRequestValidationError(
   };
 }
 
+export function createCreateIssueRequestValidationFailure(
+  input: Omit<CreateIssueRequestValidationError, "source">,
+): CreateIssueValidationError {
+  return new CreateIssueValidationError([
+    createCreateIssueRequestValidationError(input),
+  ]);
+}
+
 export function toCreateIssueValidationError(
   error: unknown,
 ): CreateIssueValidationError | undefined {

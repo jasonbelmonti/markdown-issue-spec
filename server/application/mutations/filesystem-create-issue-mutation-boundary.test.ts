@@ -67,6 +67,15 @@ async function expectCreateValidationError(
   throw new Error("Expected create mutation to reject with CreateIssueValidationError.");
 }
 
+async function expectSingleCreateValidationError(
+  run: Promise<unknown>,
+  expectedError: CreateIssueValidationError["errors"][number],
+): Promise<void> {
+  const error = await expectCreateValidationError(run);
+
+  expect(error.errors).toEqual([expectedError]);
+}
+
 async function expectNoIssueFiles(rootDirectory: string): Promise<void> {
   await expect(readdir(join(rootDirectory, "vault", "issues"))).rejects.toMatchObject({
     code: "ENOENT",
@@ -166,7 +175,7 @@ test("createFilesystemCreateIssueMutationBoundary rejects schema validation fail
   const rootDirectory = await createTemporaryRootDirectory();
   const boundary = createCreateIssueBoundary(rootDirectory);
 
-  const error = await expectCreateValidationError(
+  await expectSingleCreateValidationError(
     boundary.createIssue({
       kind: "create_issue",
       input: {
@@ -174,9 +183,6 @@ test("createFilesystemCreateIssueMutationBoundary rejects schema validation fail
         spec_version: "mis/9.9",
       } as typeof CREATE_ISSUE_COMMAND.input,
     }),
-  );
-
-  expect(error.errors).toEqual([
     {
       code: "schema.const",
       source: "schema",
@@ -188,7 +194,7 @@ test("createFilesystemCreateIssueMutationBoundary rejects schema validation fail
         allowedValue: "mis/0.1",
       },
     },
-  ]);
+  );
   await expectNoIssueFiles(rootDirectory);
 });
 
@@ -196,7 +202,7 @@ test("createFilesystemCreateIssueMutationBoundary rejects malformed links payloa
   const rootDirectory = await createTemporaryRootDirectory();
   const boundary = createCreateIssueBoundary(rootDirectory);
 
-  const error = await expectCreateValidationError(
+  await expectSingleCreateValidationError(
     boundary.createIssue({
       kind: "create_issue",
       input: {
@@ -204,16 +210,13 @@ test("createFilesystemCreateIssueMutationBoundary rejects malformed links payloa
         links: "ISSUE-404",
       } as unknown as typeof CREATE_ISSUE_COMMAND.input,
     }),
-  );
-
-  expect(error.errors).toEqual([
     {
       code: "create.invalid_links",
       source: "request",
       path: "/links",
       message: "Expected `links` to be an array when present.",
     },
-  ]);
+  );
   await expectNoIssueFiles(rootDirectory);
 });
 
@@ -221,21 +224,18 @@ test("createFilesystemCreateIssueMutationBoundary rejects non-object payloads as
   const rootDirectory = await createTemporaryRootDirectory();
   const boundary = createCreateIssueBoundary(rootDirectory);
 
-  const error = await expectCreateValidationError(
+  await expectSingleCreateValidationError(
     boundary.createIssue({
       kind: "create_issue",
       input: "not-an-object" as unknown as typeof CREATE_ISSUE_COMMAND.input,
     }),
-  );
-
-  expect(error.errors).toEqual([
     {
       code: "create.invalid_payload",
       source: "request",
       path: "/",
       message: "Create issue input must be a JSON object.",
     },
-  ]);
+  );
   await expectNoIssueFiles(rootDirectory);
 });
 
@@ -246,7 +246,7 @@ test("createFilesystemCreateIssueMutationBoundary rejects semantic validation fa
     issueIdGenerator: () => generatedIssueId,
   });
 
-  const error = await expectCreateValidationError(
+  await expectSingleCreateValidationError(
     boundary.createIssue({
       kind: "create_issue",
       input: {
@@ -259,9 +259,6 @@ test("createFilesystemCreateIssueMutationBoundary rejects semantic validation fa
         ],
       },
     }),
-  );
-
-  expect(error.errors).toEqual([
     {
       code: "semantic.self_link",
       source: "semantic",
@@ -274,7 +271,7 @@ test("createFilesystemCreateIssueMutationBoundary rejects semantic validation fa
       },
       related_issue_ids: [generatedIssueId],
     },
-  ]);
+  );
   await expectNoIssueFiles(rootDirectory);
 });
 
@@ -310,7 +307,7 @@ test("createFilesystemCreateIssueMutationBoundary rejects unresolved references 
     issueIdGenerator: () => generatedIssueId,
   });
 
-  const error = await expectCreateValidationError(
+  await expectSingleCreateValidationError(
     boundary.createIssue({
       kind: "create_issue",
       input: {
@@ -323,9 +320,6 @@ test("createFilesystemCreateIssueMutationBoundary rejects unresolved references 
         ],
       },
     }),
-  );
-
-  expect(error.errors).toEqual([
     {
       code: "graph.unresolved_reference",
       severity: "error",
@@ -335,7 +329,7 @@ test("createFilesystemCreateIssueMutationBoundary rejects unresolved references 
       field_path: "links[0].target",
       related_issue_ids: ["ISSUE-404"],
     },
-  ]);
+  );
   await expectNoIssueFiles(rootDirectory);
 });
 
@@ -365,7 +359,7 @@ test("createFilesystemCreateIssueMutationBoundary rejects graph validation failu
     body: "## Objective\n\nParticipate in a cycle.\n",
   });
 
-  const error = await expectCreateValidationError(
+  await expectSingleCreateValidationError(
     boundary.createIssue({
       kind: "create_issue",
       input: {
@@ -378,9 +372,6 @@ test("createFilesystemCreateIssueMutationBoundary rejects graph validation failu
         ],
       },
     }),
-  );
-
-  expect(error.errors).toEqual([
     {
       code: "graph.parent_cycle",
       severity: "error",
@@ -389,7 +380,7 @@ test("createFilesystemCreateIssueMutationBoundary rejects graph validation failu
       file_path: `vault/issues/${generatedIssueId}.md`,
       related_issue_ids: ["ISSUE-0100"],
     },
-  ]);
+  );
   expect(await readdir(join(rootDirectory, "vault", "issues"))).toEqual([
     "ISSUE-0100.md",
   ]);

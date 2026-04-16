@@ -4,24 +4,21 @@ import type { Issue } from "../../core/types/index.ts";
 import type { CreateIssueInput } from "./create-issue-input.ts";
 import { DEFAULT_CREATE_ISSUE_BODY } from "./create-issue-default-body.ts";
 import {
-  createCreateIssueRequestValidationError,
-  CreateIssueValidationError,
+  createCreateIssueRequestValidationFailure,
 } from "./create-issue-validation-error.ts";
 
-function createCreateInputValidationError(
+function createCreateInputValidationFailure(
   code: string,
   path: string,
   message: string,
   details?: Record<string, unknown>,
-): CreateIssueValidationError {
-  return new CreateIssueValidationError([
-    createCreateIssueRequestValidationError({
-      code,
-      path,
-      message,
-      ...(details === undefined ? {} : { details }),
-    }),
-  ]);
+) {
+  return createCreateIssueRequestValidationFailure({
+    code,
+    path,
+    message,
+    ...(details === undefined ? {} : { details }),
+  });
 }
 
 function assertCreateIssueInputRecord(input: CreateIssueInput): void {
@@ -29,11 +26,21 @@ function assertCreateIssueInputRecord(input: CreateIssueInput): void {
     return;
   }
 
-  throw createCreateInputValidationError(
+  throw createCreateInputValidationFailure(
     "create.invalid_payload",
     "/",
     "Create issue input must be a JSON object.",
   );
+}
+
+function parseNormalizedLinkErrorIndex(message: string): number | undefined {
+  const normalizedLinkMatch = /^Failed to normalize link at index (\d+): /.exec(message);
+
+  if (normalizedLinkMatch === null) {
+    return undefined;
+  }
+
+  return Number(normalizedLinkMatch[1]);
 }
 
 function normalizeCreateIssueLinks(
@@ -43,12 +50,10 @@ function normalizeCreateIssueLinks(
     return normalizeIssueLinks(links);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    const normalizedLinkMatch = /^Failed to normalize link at index (\d+): /.exec(message);
+    const linkIndex = parseNormalizedLinkErrorIndex(message);
 
-    if (normalizedLinkMatch !== null) {
-      const linkIndex = Number(normalizedLinkMatch[1]);
-
-      throw createCreateInputValidationError(
+    if (linkIndex !== undefined) {
+      throw createCreateInputValidationFailure(
         "create.invalid_links",
         `/links/${linkIndex}`,
         message,
@@ -56,7 +61,7 @@ function normalizeCreateIssueLinks(
       );
     }
 
-    throw createCreateInputValidationError(
+    throw createCreateInputValidationFailure(
       "create.invalid_links",
       "/links",
       message,
