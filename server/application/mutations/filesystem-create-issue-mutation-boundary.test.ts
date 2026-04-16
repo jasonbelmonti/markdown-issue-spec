@@ -192,6 +192,53 @@ test("createFilesystemCreateIssueMutationBoundary rejects schema validation fail
   await expectNoIssueFiles(rootDirectory);
 });
 
+test("createFilesystemCreateIssueMutationBoundary rejects malformed links payloads as request validation failures", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+  const boundary = createCreateIssueBoundary(rootDirectory);
+
+  const error = await expectCreateValidationError(
+    boundary.createIssue({
+      kind: "create_issue",
+      input: {
+        ...CREATE_ISSUE_COMMAND.input,
+        links: "ISSUE-404",
+      } as unknown as typeof CREATE_ISSUE_COMMAND.input,
+    }),
+  );
+
+  expect(error.errors).toEqual([
+    {
+      code: "create.invalid_links",
+      source: "request",
+      path: "/links",
+      message: "Expected `links` to be an array when present.",
+    },
+  ]);
+  await expectNoIssueFiles(rootDirectory);
+});
+
+test("createFilesystemCreateIssueMutationBoundary rejects non-object payloads as request validation failures", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+  const boundary = createCreateIssueBoundary(rootDirectory);
+
+  const error = await expectCreateValidationError(
+    boundary.createIssue({
+      kind: "create_issue",
+      input: "not-an-object" as unknown as typeof CREATE_ISSUE_COMMAND.input,
+    }),
+  );
+
+  expect(error.errors).toEqual([
+    {
+      code: "create.invalid_payload",
+      source: "request",
+      path: "/",
+      message: "Create issue input must be a JSON object.",
+    },
+  ]);
+  await expectNoIssueFiles(rootDirectory);
+});
+
 test("createFilesystemCreateIssueMutationBoundary rejects semantic validation failures without writing files", async () => {
   const rootDirectory = await createTemporaryRootDirectory();
   const generatedIssueId = "ISSUE-00000000000000000000000003";

@@ -8,10 +8,19 @@ import {
   MarkdownFrontmatterValidationError,
 } from "../../core/validation/index.ts";
 
+export interface CreateIssueRequestValidationError {
+  code: string;
+  source: "request";
+  path: string;
+  message: string;
+  details?: Record<string, unknown>;
+}
+
 export type CreateIssueValidationDetail =
   | FrontmatterValidationError
   | SemanticValidationError
-  | ValidationError;
+  | ValidationError
+  | CreateIssueRequestValidationError;
 
 export class CreateIssueValidationError extends Error {
   readonly errors: readonly CreateIssueValidationDetail[];
@@ -21,6 +30,15 @@ export class CreateIssueValidationError extends Error {
     this.name = "CreateIssueValidationError";
     this.errors = [...errors];
   }
+}
+
+export function createCreateIssueRequestValidationError(
+  input: Omit<CreateIssueRequestValidationError, "source">,
+): CreateIssueRequestValidationError {
+  return {
+    ...input,
+    source: "request",
+  };
 }
 
 export function toCreateIssueValidationError(
