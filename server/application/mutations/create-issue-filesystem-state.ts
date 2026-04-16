@@ -49,6 +49,23 @@ function isMissingFileError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error && error.code === "ENOENT";
 }
 
+function createIssueIdConflictError(
+  rootDirectory: string,
+  candidateFilePath: string,
+  issueId: string,
+): CreateIssueValidationError {
+  return new CreateIssueValidationError([
+    createCreateIssueCanonicalValidationError({
+      code: "create.issue_id_conflict",
+      path: toStartupRelativeFilePath(rootDirectory, candidateFilePath),
+      message: `Cannot create issue because canonical file already exists for "${issueId}".`,
+      details: {
+        issueId,
+      },
+    }),
+  ]);
+}
+
 async function assertCreateIssueIdAvailable(
   store: FilesystemIssueStore,
   rootDirectory: string,
@@ -66,16 +83,7 @@ async function assertCreateIssueIdAvailable(
     throw error;
   }
 
-  throw new CreateIssueValidationError([
-    createCreateIssueCanonicalValidationError({
-      code: "create.issue_id_conflict",
-      path: toStartupRelativeFilePath(rootDirectory, candidateFilePath),
-      message: `Cannot create issue because canonical file already exists for "${issueId}".`,
-      details: {
-        issueId,
-      },
-    }),
-  ]);
+  throw createIssueIdConflictError(rootDirectory, candidateFilePath, issueId);
 }
 
 export async function loadCreateIssueFilesystemState(

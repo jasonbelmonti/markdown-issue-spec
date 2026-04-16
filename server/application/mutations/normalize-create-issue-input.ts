@@ -4,7 +4,6 @@ import type { CreateIssueInput } from "./create-issue-input.ts";
 import { createCreateIssueRequestValidationFailure } from "./create-issue-validation-error.ts";
 
 export interface NormalizedCreateIssueInput extends CreateIssueInput {
-  body?: string;
   links?: IssueLink[];
 }
 
@@ -65,10 +64,10 @@ export function normalizeCreateIssueInput(
     });
   }
 
+  const normalizedLinks = normalizeCreateIssueLinks(input);
+
   return {
     ...input,
-    ...(hasOwn(input, "links")
-      ? { links: normalizeCreateIssueLinks(input) }
-      : {}),
+    ...(normalizedLinks === undefined ? {} : { links: normalizedLinks }),
   };
 }
