@@ -40,6 +40,19 @@ function createCreateIssueBoundary(
   });
 }
 
+async function expectAppliedCreateIssue(
+  run: Promise<Awaited<ReturnType<ReturnType<typeof createCreateIssueBoundary>["createIssue"]>>>,
+) {
+  const result = await run;
+
+  expect(result.status).toBe("applied");
+  if (result.status !== "applied") {
+    throw new Error("Expected create mutation to apply.");
+  }
+
+  return result;
+}
+
 async function expectCreateValidationError(
   run: Promise<unknown>,
 ): Promise<CreateIssueValidationError> {
@@ -54,6 +67,12 @@ async function expectCreateValidationError(
   throw new Error("Expected create mutation to reject with CreateIssueValidationError.");
 }
 
+async function expectNoIssueFiles(rootDirectory: string): Promise<void> {
+  await expect(readdir(join(rootDirectory, "vault", "issues"))).rejects.toMatchObject({
+    code: "ENOENT",
+  });
+}
+
 test("createFilesystemCreateIssueMutationBoundary applies valid create commands and persists the canonical issue", async () => {
   const rootDirectory = await createTemporaryRootDirectory();
   const boundary = createCreateIssueBoundary(rootDirectory, {
@@ -61,12 +80,9 @@ test("createFilesystemCreateIssueMutationBoundary applies valid create commands 
   });
   const store = new FilesystemIssueStore({ rootDirectory });
 
-  const result = await boundary.createIssue(CREATE_ISSUE_COMMAND);
-
-  expect(result.status).toBe("applied");
-  if (result.status !== "applied") {
-    throw new Error("Expected create mutation to apply.");
-  }
+  const result = await expectAppliedCreateIssue(
+    boundary.createIssue(CREATE_ISSUE_COMMAND),
+  );
 
   expect(result.issue.id).toMatch(/^ISSUE-[0-9A-HJKMNP-TV-Z]{26}$/);
   expect(result).toMatchObject({
@@ -112,15 +128,12 @@ test("createFilesystemCreateIssueMutationBoundary writes the default body templa
 
   delete (input as { body?: string }).body;
 
-  const result = await boundary.createIssue({
-    kind: "create_issue",
-    input,
-  });
-
-  expect(result.status).toBe("applied");
-  if (result.status !== "applied") {
-    throw new Error("Expected create mutation to apply.");
-  }
+  const result = await expectAppliedCreateIssue(
+    boundary.createIssue({
+      kind: "create_issue",
+      input,
+    }),
+  );
 
   expect((await store.readIssue(result.issue.id)).body).toBe(DEFAULT_CREATE_ISSUE_BODY);
 });
@@ -132,18 +145,15 @@ test("createFilesystemCreateIssueMutationBoundary ignores client-supplied ids an
   });
   const clientIssueId = "ISSUE-CLIENT-SUPPLIED";
 
-  const result = await boundary.createIssue({
-    kind: "create_issue",
-    input: {
-      ...CREATE_ISSUE_COMMAND.input,
-      id: clientIssueId,
-    } as typeof CREATE_ISSUE_COMMAND.input,
-  });
-
-  expect(result.status).toBe("applied");
-  if (result.status !== "applied") {
-    throw new Error("Expected create mutation to apply.");
-  }
+  const result = await expectAppliedCreateIssue(
+    boundary.createIssue({
+      kind: "create_issue",
+      input: {
+        ...CREATE_ISSUE_COMMAND.input,
+        id: clientIssueId,
+      } as typeof CREATE_ISSUE_COMMAND.input,
+    }),
+  );
 
   expect(result.issue.id).toBe("ISSUE-00000000000000000000000010");
   expect(result.issue.id).not.toBe(clientIssueId);
@@ -179,9 +189,7 @@ test("createFilesystemCreateIssueMutationBoundary rejects schema validation fail
       },
     },
   ]);
-  await expect(readdir(join(rootDirectory, "vault", "issues"))).rejects.toMatchObject({
-    code: "ENOENT",
-  });
+  await expectNoIssueFiles(rootDirectory);
 });
 
 test("createFilesystemCreateIssueMutationBoundary rejects semantic validation failures without writing files", async () => {
@@ -220,9 +228,7 @@ test("createFilesystemCreateIssueMutationBoundary rejects semantic validation fa
       related_issue_ids: [generatedIssueId],
     },
   ]);
-  await expect(readdir(join(rootDirectory, "vault", "issues"))).rejects.toMatchObject({
-    code: "ENOENT",
-  });
+  await expectNoIssueFiles(rootDirectory);
 });
 
 test("createFilesystemCreateIssueMutationBoundary ignores unrelated invalid canonical files when validating a new issue graph", async () => {
@@ -243,12 +249,9 @@ created_at: definitely-not-a-timestamp
 `,
   );
 
-  const result = await boundary.createIssue(CREATE_ISSUE_COMMAND);
-
-  expect(result.status).toBe("applied");
-  if (result.status !== "applied") {
-    throw new Error("Expected create mutation to apply.");
-  }
+  const result = await expectAppliedCreateIssue(
+    boundary.createIssue(CREATE_ISSUE_COMMAND),
+  );
 
   expect((await store.readIssue(result.issue.id)).id).toBe(result.issue.id);
 });
@@ -286,9 +289,7 @@ test("createFilesystemCreateIssueMutationBoundary rejects unresolved references 
       related_issue_ids: ["ISSUE-404"],
     },
   ]);
-  await expect(readdir(join(rootDirectory, "vault", "issues"))).rejects.toMatchObject({
-    code: "ENOENT",
-  });
+  await expectNoIssueFiles(rootDirectory);
 });
 
 test("createFilesystemCreateIssueMutationBoundary rejects graph validation failures without writing a new file", async () => {

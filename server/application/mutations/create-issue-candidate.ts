@@ -5,6 +5,10 @@ import type { CreateIssueInput } from "./create-issue-input.ts";
 import { DEFAULT_CREATE_ISSUE_BODY } from "./create-issue-default-body.ts";
 
 function buildIssueBase(input: CreateIssueInput, issueId: string) {
+  const normalizedLinks = input.links === undefined
+    ? undefined
+    : normalizeIssueLinks(input.links);
+
   return {
     spec_version: input.spec_version,
     id: issueId,
@@ -17,7 +21,7 @@ function buildIssueBase(input: CreateIssueInput, issueId: string) {
     ...(input.priority !== undefined ? { priority: input.priority } : {}),
     ...(input.labels !== undefined ? { labels: input.labels } : {}),
     ...(input.assignees !== undefined ? { assignees: input.assignees } : {}),
-    ...(input.links !== undefined ? { links: normalizeIssueLinks(input.links) } : {}),
+    ...(normalizedLinks !== undefined ? { links: normalizedLinks } : {}),
     ...(input.extensions !== undefined ? { extensions: input.extensions } : {}),
   };
 }
@@ -25,26 +29,25 @@ function buildIssueBase(input: CreateIssueInput, issueId: string) {
 function buildCandidateIssue(input: CreateIssueInput, issueId: string): Issue {
   const issueBase = buildIssueBase(input, issueId);
 
-  if (input.status === "completed") {
-    return {
-      ...issueBase,
-      status: "completed",
-      resolution: input.resolution,
-    };
+  switch (input.status) {
+    case "completed":
+      return {
+        ...issueBase,
+        status: "completed",
+        resolution: input.resolution,
+      };
+    case "canceled":
+      return {
+        ...issueBase,
+        status: "canceled",
+        resolution: input.resolution,
+      };
+    default:
+      return {
+        ...issueBase,
+        status: input.status,
+      };
   }
-
-  if (input.status === "canceled") {
-    return {
-      ...issueBase,
-      status: "canceled",
-      resolution: input.resolution,
-    };
-  }
-
-  return {
-    ...issueBase,
-    status: input.status,
-  };
 }
 
 export function parseCreateIssueCandidate(
