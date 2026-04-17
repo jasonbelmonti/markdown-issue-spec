@@ -3,6 +3,7 @@ import {
   loadPatchIssueFilesystemState,
   persistPatchedIssueAndBuildEnvelope,
 } from "./patch-issue-filesystem-state.ts";
+import { createFilesystemMutationLock } from "./filesystem-mutation-lock.ts";
 import {
   parsePatchIssueCandidate,
 } from "./patch-issue-candidate.ts";
@@ -26,35 +27,13 @@ function createTimestamp(): string {
   return new Date().toISOString();
 }
 
-async function withIssueLock<T>(
-  previousLock: Promise<void>,
-  replaceLock: (lock: Promise<void>) => void,
-  clearLock: (lock: Promise<void>) => void,
-  run: () => Promise<T>,
-): Promise<T> {
-  let releaseLock!: () => void;
-  const currentLock = new Promise<void>((resolve) => {
-    releaseLock = resolve;
-  });
-
-  replaceLock(currentLock);
-  await previousLock;
-
-  try {
-    return await run();
-  } finally {
-    releaseLock();
-    clearLock(currentLock);
-  }
-}
-
 export function createFilesystemPatchIssueMutationBoundary(
   options: FilesystemPatchIssueMutationBoundaryOptions,
 ): PatchIssueMutationBoundary {
   const { rootDirectory } = options;
   const now = options.now ?? createTimestamp;
   const beforePersist = options.beforePersist;
-  let mutationLock: Promise<void> = Promise.resolve();
+  const mutationLock = createFilesystemMutationLock();
 
   return {
     async patchIssue(command: PatchIssueMutationCommand) {
@@ -62,17 +41,7 @@ export function createFilesystemPatchIssueMutationBoundary(
 
       try {
         const input = normalizePatchIssueInput(command.input);
-        return await withIssueLock(
-          mutationLock,
-          (lock) => {
-            mutationLock = lock;
-          },
-          (lock) => {
-            if (mutationLock === lock) {
-              mutationLock = Promise.resolve();
-            }
-          },
-          async () => {
+        return await mutationLock.run(async () => {
           const filesystemState = await loadPatchIssueFilesystemState(
             rootDirectory,
             command.issueId,
@@ -120,8 +89,7 @@ export function createFilesystemPatchIssueMutationBoundary(
             envelope,
             revision: envelope.revision,
           } as const;
-          },
-        );
+        });
       } catch (error) {
         const validationError = toPatchIssueValidationError(error);
 
