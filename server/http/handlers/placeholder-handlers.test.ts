@@ -2,7 +2,6 @@ import { expect, test } from "bun:test";
 
 import {
   createCreateIssueHandler,
-  handleCreateIssue,
 } from "./create-issue-handler.ts";
 import {
   handleTransitionIssue,
@@ -37,21 +36,6 @@ function createUnexpectedCreateIssueBoundary() {
     },
   };
 }
-
-test("handleCreateIssue returns a deterministic not-implemented response", async () => {
-  const response = await handleCreateIssue(createCreateIssueRequest());
-
-  expect(response.status).toBe(501);
-  expect(await response.json()).toEqual({
-    error: {
-      code: "issue_create_not_implemented",
-      message: "POST /issues is not implemented yet.",
-      details: {
-        endpoint: "POST /issues",
-      },
-    },
-  });
-});
 
 test("createCreateIssueHandler delegates to the mutation boundary", async () => {
   const commands: unknown[] = [];

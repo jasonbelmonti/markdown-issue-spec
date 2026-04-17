@@ -9,6 +9,7 @@ import { createApiError } from "../errors/api-error.ts";
 import { createApiErrorResponse } from "../errors/error-response.ts";
 import { parseJsonBody } from "../request/parse-json-body.ts";
 import { jsonResponse } from "../response/json.ts";
+import { defaultFilesystemIssueMutationLock } from "./default-filesystem-issue-mutation-lock.ts";
 import { createNotImplementedMutationResponse } from "./not-implemented-mutation-response.ts";
 import type { HttpRouteHandler, HttpRouteRequest } from "./types.ts";
 
@@ -29,6 +30,7 @@ function getIssueIdFromRequest(request: HttpRouteRequest): string {
 
 const defaultIssueMutationBoundary = createFilesystemPatchIssueMutationBoundary({
   rootDirectory: process.cwd(),
+  mutationLock: defaultFilesystemIssueMutationLock,
 });
 
 async function parsePatchIssueInput(
