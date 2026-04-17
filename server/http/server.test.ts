@@ -3,8 +3,9 @@ import { mkdtemp, readdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { createFilesystemCreateIssueMutationBoundary } from "../application/mutations/filesystem-create-issue-mutation-boundary.ts";
 import { createFilesystemPatchIssueMutationBoundary } from "../application/mutations/filesystem-patch-issue-mutation-boundary.ts";
-import type { Issue } from "../core/types/index.ts";
+import type { Issue, IssueEnvelope } from "../core/types/index.ts";
 import { FilesystemIssueStore } from "../store/index.ts";
 import { computeIssueRevision } from "../store/issue-revision.ts";
 import { createCreateIssueHandler } from "./handlers/create-issue-handler.ts";
@@ -12,6 +13,8 @@ import { createPatchIssueHandler } from "./handlers/patch-issue-handler.ts";
 import { handleTransitionIssue } from "./handlers/transition-issue-handler.ts";
 import { startServer } from "./server.ts";
 
+const CREATE_TIMESTAMP = "2026-04-16T20:59:00-05:00";
+const CREATED_ISSUE_ID = "ISSUE-00000000000000000000000012";
 const PATCH_TIMESTAMP = "2026-04-12T12:34:00-05:00";
 
 const CREATE_ISSUE_REQUEST_BODY = {
@@ -46,7 +49,13 @@ async function withServer<T>(
   const server = startServer({
     port: 0,
     mutationHandlers: {
-      createIssue: createCreateIssueHandler(),
+      createIssue: createCreateIssueHandler(
+        createFilesystemCreateIssueMutationBoundary({
+          rootDirectory,
+          issueIdGenerator: () => CREATED_ISSUE_ID,
+          now: () => CREATE_TIMESTAMP,
+        }),
+      ),
       patchIssue: createPatchIssueHandler(
         createFilesystemPatchIssueMutationBoundary({
           rootDirectory,
@@ -64,7 +73,7 @@ async function withServer<T>(
   }
 }
 
-test("startServer serves the create placeholder plus real patch outcomes", async () => {
+test("startServer serves real create and patch outcomes", async () => {
   const rootDirectory = await createTemporaryRootDirectory();
   const store = new FilesystemIssueStore({ rootDirectory });
 
@@ -78,6 +87,7 @@ test("startServer serves the create placeholder plus real patch outcomes", async
       },
       body: JSON.stringify(CREATE_ISSUE_REQUEST_BODY),
     });
+    const createBody = await createResponse.json() as IssueEnvelope;
     const initialSource = await readFile(
       store.getIssueFilePath(EXISTING_ISSUE.id),
       "utf8",
@@ -126,16 +136,24 @@ test("startServer serves the create placeholder plus real patch outcomes", async
       { method: "POST" },
     );
 
-    expect(createResponse.status).toBe(501);
-    expect(await createResponse.json()).toEqual({
-      error: {
-        code: "issue_create_not_implemented",
-        message: "POST /issues is not implemented yet.",
-        details: {
-          endpoint: "POST /issues",
-        },
+    expect(createResponse.status).toBe(201);
+    expect(createBody).toMatchObject({
+      issue: {
+        id: CREATED_ISSUE_ID,
+        spec_version: CREATE_ISSUE_REQUEST_BODY.spec_version,
+        title: CREATE_ISSUE_REQUEST_BODY.title,
+        kind: CREATE_ISSUE_REQUEST_BODY.kind,
+        status: CREATE_ISSUE_REQUEST_BODY.status,
+        created_at: CREATE_ISSUE_REQUEST_BODY.created_at,
+        body: CREATE_ISSUE_REQUEST_BODY.body,
+      },
+      revision: expect.any(String),
+      source: {
+        file_path: `vault/issues/${CREATED_ISSUE_ID}.md`,
+        indexed_at: CREATE_TIMESTAMP,
       },
     });
+    expect(await store.readIssue(CREATED_ISSUE_ID)).toEqual(createBody.issue);
 
     expect(patchResponse.status).toBe(200);
     expect(patchBody).toMatchObject({
@@ -146,7 +164,8 @@ test("startServer serves the create placeholder plus real patch outcomes", async
       },
       revision: expect.any(String),
     });
-    expect(await readdir(join(rootDirectory, "vault", "issues"))).toEqual([
+    expect((await readdir(join(rootDirectory, "vault", "issues"))).sort()).toEqual([
+      `${CREATED_ISSUE_ID}.md`,
       `${EXISTING_ISSUE.id}.md`,
     ]);
 

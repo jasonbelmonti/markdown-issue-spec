@@ -2,13 +2,20 @@ import {
   type CreateIssueMutationBoundary,
 } from "../../application/mutations/issue-mutation-boundary.ts";
 import type { CreateIssueInput } from "../../application/mutations/create-issue-input.ts";
-import { createNotImplementedIssueMutationBoundary } from "../../application/mutations/not-implemented-issue-mutation-boundary.ts";
+import { CreateIssueValidationError } from "../../application/mutations/create-issue-validation-error.ts";
+import { createFilesystemCreateIssueMutationBoundary } from "../../application/mutations/filesystem-create-issue-mutation-boundary.ts";
 import { createApiErrorResponse } from "../errors/error-response.ts";
 import { parseJsonBody } from "../request/parse-json-body.ts";
+import {
+  createCreateValidationErrorResponse,
+  createCreatedIssueResponse,
+} from "./create-issue-handler-responses.ts";
 import { createNotImplementedMutationResponse } from "./not-implemented-mutation-response.ts";
 import type { HttpRouteHandler } from "./types.ts";
 
-const defaultIssueMutationBoundary = createNotImplementedIssueMutationBoundary();
+const defaultCreateIssueMutationBoundary = createFilesystemCreateIssueMutationBoundary({
+  rootDirectory: process.cwd(),
+});
 
 async function parseCreateIssueInput(
   request: Request,
@@ -17,7 +24,7 @@ async function parseCreateIssueInput(
 }
 
 export function createCreateIssueHandler(
-  issueMutationBoundary: CreateIssueMutationBoundary = defaultIssueMutationBoundary,
+  issueMutationBoundary: CreateIssueMutationBoundary = defaultCreateIssueMutationBoundary,
 ): HttpRouteHandler {
   return async function handleCreateIssue(request: Request): Promise<Response> {
     try {
@@ -30,8 +37,12 @@ export function createCreateIssueHandler(
         return createNotImplementedMutationResponse(result);
       }
 
-      throw new Error("Create issue mutation responses are not implemented yet.");
+      return createCreatedIssueResponse(result);
     } catch (error) {
+      if (error instanceof CreateIssueValidationError) {
+        return createCreateValidationErrorResponse(error);
+      }
+
       return createApiErrorResponse(error);
     }
   };
