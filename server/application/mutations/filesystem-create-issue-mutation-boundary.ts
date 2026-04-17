@@ -9,6 +9,11 @@ import {
   CreateIssueValidationError,
   toCreateIssueValidationError,
 } from "./create-issue-validation-error.ts";
+import {
+  createFilesystemIssueMutationLock,
+  type FilesystemIssueMutationLock,
+  withFilesystemIssueMutationLock,
+} from "./filesystem-issue-mutation-lock.ts";
 import type {
   CreateIssueMutationBoundary,
   CreateIssueMutationCommand,
@@ -19,32 +24,11 @@ export interface FilesystemCreateIssueMutationBoundaryOptions {
   issueIdGenerator?: () => string;
   now?: () => string;
   beforePersist?: () => Promise<void>;
+  mutationLock?: FilesystemIssueMutationLock;
 }
 
 function createTimestamp(): string {
   return new Date().toISOString();
-}
-
-async function withIssueLock<T>(
-  previousLock: Promise<void>,
-  replaceLock: (lock: Promise<void>) => void,
-  clearLock: (lock: Promise<void>) => void,
-  run: () => Promise<T>,
-): Promise<T> {
-  let releaseLock!: () => void;
-  const currentLock = new Promise<void>((resolve) => {
-    releaseLock = resolve;
-  });
-
-  replaceLock(currentLock);
-  await previousLock;
-
-  try {
-    return await run();
-  } finally {
-    releaseLock();
-    clearLock(currentLock);
-  }
 }
 
 export function createFilesystemCreateIssueMutationBoundary(
@@ -54,23 +38,15 @@ export function createFilesystemCreateIssueMutationBoundary(
   const issueIdGenerator = options.issueIdGenerator ?? createIssueId;
   const now = options.now ?? createTimestamp;
   const beforePersist = options.beforePersist;
-  let mutationLock: Promise<void> = Promise.resolve();
+  const mutationLock = options.mutationLock ?? createFilesystemIssueMutationLock();
 
   return {
     async createIssue(command: CreateIssueMutationCommand) {
       const indexedAt = now();
 
       try {
-        return await withIssueLock(
+        return await withFilesystemIssueMutationLock(
           mutationLock,
-          (lock) => {
-            mutationLock = lock;
-          },
-          (lock) => {
-            if (mutationLock === lock) {
-              mutationLock = Promise.resolve();
-            }
-          },
           async () => {
             const issueId = issueIdGenerator();
             const issue = parseCreateIssueCandidate(command.input, issueId);

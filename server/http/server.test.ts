@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { createFilesystemCreateIssueMutationBoundary } from "../application/mutations/filesystem-create-issue-mutation-boundary.ts";
+import { createFilesystemIssueMutationLock } from "../application/mutations/filesystem-issue-mutation-lock.ts";
 import { createFilesystemPatchIssueMutationBoundary } from "../application/mutations/filesystem-patch-issue-mutation-boundary.ts";
 import type { Issue, IssueEnvelope } from "../core/types/index.ts";
 import { FilesystemIssueStore } from "../store/index.ts";
@@ -221,4 +222,103 @@ test("startServer keeps the structured json 404 fallback for unmatched routes", 
       },
     });
   });
+});
+
+test("startServer serializes concurrent create and patch writes that share a repository mutation lock", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+  const store = new FilesystemIssueStore({ rootDirectory });
+  const mutationLock = createFilesystemIssueMutationLock();
+  let releaseCreatePersist!: () => void;
+  const createPersistReleased = new Promise<void>((resolve) => {
+    releaseCreatePersist = resolve;
+  });
+  let markCreatePersistReached!: () => void;
+  const createPersistReached = new Promise<void>((resolve) => {
+    markCreatePersistReached = resolve;
+  });
+
+  await store.writeIssue(EXISTING_ISSUE);
+
+  const server = startServer({
+    port: 0,
+    mutationHandlers: {
+      createIssue: createCreateIssueHandler(
+        createFilesystemCreateIssueMutationBoundary({
+          rootDirectory,
+          issueIdGenerator: () => CREATED_ISSUE_ID,
+          now: () => CREATE_TIMESTAMP,
+          mutationLock,
+          beforePersist: async () => {
+            markCreatePersistReached();
+            await createPersistReleased;
+          },
+        }),
+      ),
+      patchIssue: createPatchIssueHandler(
+        createFilesystemPatchIssueMutationBoundary({
+          rootDirectory,
+          now: () => PATCH_TIMESTAMP,
+          mutationLock,
+        }),
+      ),
+      transitionIssue: handleTransitionIssue,
+    },
+  });
+
+  try {
+    const baseUrl = `http://127.0.0.1:${server.port}`;
+    const expectedRevision = computeIssueRevision(
+      await readFile(store.getIssueFilePath(EXISTING_ISSUE.id), "utf8"),
+    );
+    const createResponsePromise = fetch(`${baseUrl}/issues`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(CREATE_ISSUE_REQUEST_BODY),
+    });
+
+    await createPersistReached;
+
+    const patchResponsePromise = fetch(`${baseUrl}/issues/${EXISTING_ISSUE.id}`, {
+      method: "PATCH",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        expectedRevision,
+        links: [
+          {
+            rel: "parent",
+            target: CREATED_ISSUE_ID,
+          },
+        ],
+      }),
+    });
+
+    releaseCreatePersist();
+
+    const [createResponse, patchResponse] = await Promise.all([
+      createResponsePromise,
+      patchResponsePromise,
+    ]);
+    const patchBody = await patchResponse.json() as IssueEnvelope;
+
+    expect(createResponse.status).toBe(201);
+    expect(patchResponse.status).toBe(200);
+    expect(patchBody.issue.links).toEqual([
+      {
+        rel: "parent",
+        target: {
+          id: CREATED_ISSUE_ID,
+        },
+      },
+    ]);
+    expect(await store.readIssue(CREATED_ISSUE_ID)).toMatchObject({
+      id: CREATED_ISSUE_ID,
+      title: CREATE_ISSUE_REQUEST_BODY.title,
+    });
+  } finally {
+    server.stop(true);
+  }
 });
