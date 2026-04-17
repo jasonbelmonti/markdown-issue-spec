@@ -5,6 +5,7 @@ import type {
 } from "../../core/types/index.ts";
 import type { CreateIssueInput } from "./create-issue-input.ts";
 import type { PatchIssueInput } from "./patch-issue-input.ts";
+import type { TransitionIssueInput } from "./transition-issue-input.ts";
 
 export interface CreateIssueMutationCommand {
   kind: "create_issue";
@@ -15,6 +16,12 @@ export interface PatchIssueMutationCommand {
   kind: "patch_issue";
   issueId: string;
   input: PatchIssueInput;
+}
+
+export interface TransitionIssueMutationCommand {
+  kind: "transition_issue";
+  issueId: string;
+  input: TransitionIssueInput;
 }
 
 export interface AppliedIssueMutationResult {
@@ -46,6 +53,11 @@ export type PatchIssueMutationResult =
   | RevisionMismatchIssueMutationResult
   | NotImplementedIssueMutationResult;
 
+export type TransitionIssueMutationResult =
+  | AppliedIssueMutationResult
+  | RevisionMismatchIssueMutationResult
+  | NotImplementedIssueMutationResult;
+
 export interface IssueMutationBoundary {
   createIssue(
     command: CreateIssueMutationCommand,
@@ -53,6 +65,9 @@ export interface IssueMutationBoundary {
   patchIssue(
     command: PatchIssueMutationCommand,
   ): Promise<PatchIssueMutationResult>;
+  transitionIssue(
+    command: TransitionIssueMutationCommand,
+  ): Promise<TransitionIssueMutationResult>;
 }
 
 export type CreateIssueMutationBoundary = Pick<
@@ -63,4 +78,9 @@ export type CreateIssueMutationBoundary = Pick<
 export type PatchIssueMutationBoundary = Pick<
   IssueMutationBoundary,
   "patchIssue"
+>;
+
+export type TransitionIssueMutationBoundary = Pick<
+  IssueMutationBoundary,
+  "transitionIssue"
 >;

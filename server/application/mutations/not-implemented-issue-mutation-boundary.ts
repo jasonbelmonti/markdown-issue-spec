@@ -15,6 +15,12 @@ const PATCH_ISSUE_NOT_IMPLEMENTED_RESULT = {
   endpoint: "PATCH /issues/:id",
 } as const satisfies NotImplementedIssueMutationResult;
 
+const TRANSITION_ISSUE_NOT_IMPLEMENTED_RESULT = {
+  status: "not_implemented",
+  code: "issue_transition_not_implemented",
+  endpoint: "POST /issues/:id/transition",
+} as const satisfies NotImplementedIssueMutationResult;
+
 export function createNotImplementedIssueMutationBoundary(): IssueMutationBoundary {
   return {
     async createIssue(_command) {
@@ -23,6 +29,10 @@ export function createNotImplementedIssueMutationBoundary(): IssueMutationBounda
 
     async patchIssue(_command) {
       return PATCH_ISSUE_NOT_IMPLEMENTED_RESULT;
+    },
+
+    async transitionIssue(_command) {
+      return TRANSITION_ISSUE_NOT_IMPLEMENTED_RESULT;
     },
   };
 }
