@@ -13,6 +13,7 @@ export type GuardedIssueTransitionStatus = Extract<
 >;
 
 export type TransitionGuardErrorCode =
+  | "transition.terminal_issue_closed"
   | "transition.completed_requires_in_progress"
   | "transition.dependency_not_satisfied";
 
@@ -36,12 +37,12 @@ export interface IssueTransitionGuardResult {
   errors: readonly TransitionGuardError[];
 }
 
-interface DependencyLinkEntry {
+export interface RelevantDependencyLinkEntry {
   index: number;
   link: DependencyIssueLink;
 }
 
-interface KnownDependencyLinkEntry extends DependencyLinkEntry {
+interface KnownDependencyLinkEntry extends RelevantDependencyLinkEntry {
   dependencyIssue: Issue;
 }
 
@@ -77,7 +78,7 @@ function isDependencyLink(link: IssueLink): link is DependencyIssueLink {
   return link.rel === "depends_on";
 }
 
-function isGuardedTransition(
+export function isGuardedIssueTransitionStatus(
   nextStatus: IssueStatus,
 ): nextStatus is GuardedIssueTransitionStatus {
   return nextStatus === "in_progress" || nextStatus === "completed";
@@ -85,6 +86,12 @@ function isGuardedTransition(
 
 function isDependencySatisfied(issue: Issue): boolean {
   return issue.status === "completed" && issue.resolution === "done";
+}
+
+function isTerminalIssueStatus(
+  status: IssueStatus,
+): status is Extract<IssueStatus, "completed" | "canceled"> {
+  return status === "completed" || status === "canceled";
 }
 
 function readIssueResolution(issue: Issue): Issue["resolution"] | null {
@@ -111,11 +118,11 @@ function shouldEvaluateDependencyForTransition(
   return issue.status !== "in_progress";
 }
 
-function findRelevantDependencyLinks(
+export function findRelevantDependencyLinks(
   issue: Issue,
   nextStatus: GuardedIssueTransitionStatus,
-): DependencyLinkEntry[] {
-  const relevantLinks: DependencyLinkEntry[] = [];
+) : RelevantDependencyLinkEntry[] {
+  const relevantLinks: RelevantDependencyLinkEntry[] = [];
 
   for (const [index, link] of (issue.links ?? []).entries()) {
     if (!isDependencyLink(link)) {
@@ -185,6 +192,29 @@ function validateCompletedTransitionPrerequisite(
   ];
 }
 
+function validateTerminalIssueClosed(
+  issue: Issue,
+  nextStatus: IssueStatus,
+): TransitionGuardError[] {
+  if (!isTerminalIssueStatus(issue.status) || nextStatus === issue.status) {
+    return [];
+  }
+
+  return [
+    createTransitionGuardError(
+      "transition.terminal_issue_closed",
+      "/status",
+      `Issue is already terminal with status \`${issue.status}\` and cannot transition to \`${nextStatus}\`.`,
+      {
+        issueId: issue.id,
+        currentStatus: issue.status,
+        nextStatus,
+      },
+      [issue.id],
+    ),
+  ];
+}
+
 function validateDependencyReadiness(
   issue: Issue,
   nextStatus: GuardedIssueTransitionStatus,
@@ -218,7 +248,20 @@ export function evaluateIssueTransitionGuard(
 ): IssueTransitionGuardResult {
   const { issue, next_status: nextStatus, known_dependency_issues = [] } = input;
 
-  if (nextStatus === issue.status || !isGuardedTransition(nextStatus)) {
+  if (nextStatus === issue.status) {
+    return { ok: true, errors: [] };
+  }
+
+  const terminalIssueErrors = validateTerminalIssueClosed(issue, nextStatus);
+
+  if (terminalIssueErrors.length > 0) {
+    return {
+      ok: false,
+      errors: terminalIssueErrors,
+    };
+  }
+
+  if (!isGuardedIssueTransitionStatus(nextStatus)) {
     return { ok: true, errors: [] };
   }
 

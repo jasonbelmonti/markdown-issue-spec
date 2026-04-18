@@ -17,7 +17,11 @@ export {
   validateIssueGraph,
   type GraphValidationIssue,
 } from "./validate-issue-graph.ts";
-export { evaluateIssueTransitionGuard } from "./transition-guard.ts";
+export {
+  evaluateIssueTransitionGuard,
+  findRelevantDependencyLinks,
+  isGuardedIssueTransitionStatus,
+} from "./transition-guard.ts";
 export type {
   FrontmatterValidationError,
   FrontmatterValidationSource,
