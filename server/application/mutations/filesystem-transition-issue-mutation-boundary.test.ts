@@ -245,6 +245,47 @@ test("createFilesystemTransitionIssueMutationBoundary rejects lifecycle guard fa
   expect(await readIssueSource(rootDirectory, EXISTING_ISSUE.id)).toBe(originalSource);
 });
 
+test("createFilesystemTransitionIssueMutationBoundary rejects reopening terminal issues without writing files", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+  const boundary = createTransitionIssueBoundary(rootDirectory, {
+    now: () => TRANSITION_TIMESTAMP,
+  });
+
+  await writeCanonicalIssue(rootDirectory, {
+    ...EXISTING_ISSUE,
+    status: "completed",
+    resolution: "done",
+  });
+  const expectedRevision = await readIssueRevision(rootDirectory, EXISTING_ISSUE.id);
+  const originalSource = await readIssueSource(rootDirectory, EXISTING_ISSUE.id);
+  const error = await expectTransitionValidationError(
+    boundary.transitionIssue({
+      ...TRANSITION_ISSUE_COMMAND,
+      input: {
+        expectedRevision,
+        to_status: "accepted",
+      },
+    }),
+  );
+
+  expect(error.errors).toEqual([
+    {
+      code: "transition.terminal_issue_closed",
+      source: "transition_guard",
+      path: "/status",
+      message:
+        "Issue is already terminal with status `completed` and cannot transition to `accepted`.",
+      details: {
+        issueId: EXISTING_ISSUE.id,
+        currentStatus: "completed",
+        nextStatus: "accepted",
+      },
+      related_issue_ids: [EXISTING_ISSUE.id],
+    },
+  ]);
+  expect(await readIssueSource(rootDirectory, EXISTING_ISSUE.id)).toBe(originalSource);
+});
+
 test("createFilesystemTransitionIssueMutationBoundary rejects transitions when a dependency file cannot be validated", async () => {
   const rootDirectory = await createTemporaryRootDirectory();
   const boundary = createTransitionIssueBoundary(rootDirectory, {

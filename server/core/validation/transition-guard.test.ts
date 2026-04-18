@@ -230,3 +230,36 @@ test("evaluateIssueTransitionGuard blocks direct completion before the issue has
     ],
   });
 });
+
+test("evaluateIssueTransitionGuard blocks reopening terminal issues", () => {
+  const issue = createIssue({
+    id: "ISSUE-0011",
+    title: "Closed work stays closed",
+    status: "completed",
+    resolution: "done",
+  });
+
+  expect(
+    evaluateIssueTransitionGuard({
+      issue,
+      next_status: "accepted",
+    }),
+  ).toEqual({
+    ok: false,
+    errors: [
+      {
+        code: "transition.terminal_issue_closed",
+        source: "transition_guard",
+        path: "/status",
+        message:
+          "Issue is already terminal with status `completed` and cannot transition to `accepted`.",
+        details: {
+          issueId: "ISSUE-0011",
+          currentStatus: "completed",
+          nextStatus: "accepted",
+        },
+        related_issue_ids: ["ISSUE-0011"],
+      },
+    ],
+  });
+});
