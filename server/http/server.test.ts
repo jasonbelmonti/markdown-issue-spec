@@ -11,7 +11,6 @@ import { FilesystemIssueStore } from "../store/index.ts";
 import { computeIssueRevision } from "../store/issue-revision.ts";
 import { createCreateIssueHandler } from "./handlers/create-issue-handler.ts";
 import { createPatchIssueHandler } from "./handlers/patch-issue-handler.ts";
-import { handleTransitionIssue } from "./handlers/transition-issue-handler.ts";
 import { startServer } from "./server.ts";
 
 const CREATE_TIMESTAMP = "2026-04-16T20:59:00-05:00";
@@ -63,7 +62,7 @@ async function withServer<T>(
           now: () => PATCH_TIMESTAMP,
         }),
       ),
-      transitionIssue: handleTransitionIssue,
+      transitionIssue: () => new Response("unused", { status: 500 }),
     },
   });
 
@@ -132,10 +131,6 @@ test("startServer serves real create and patch outcomes", async () => {
         title: "",
       }),
     });
-    const transitionResponse = await fetch(
-      `${baseUrl}/issues/${EXISTING_ISSUE.id}/transition`,
-      { method: "POST" },
-    );
 
     expect(createResponse.status).toBe(201);
     expect(createBody).toMatchObject({
@@ -195,16 +190,6 @@ test("startServer serves real create and patch outcomes", async () => {
       patchedSource,
     );
 
-    expect(transitionResponse.status).toBe(501);
-    expect(await transitionResponse.json()).toEqual({
-      error: {
-        code: "issue_transition_not_implemented",
-        message: "POST /issues/:id/transition is not implemented yet.",
-        details: {
-          endpoint: "POST /issues/:id/transition",
-        },
-      },
-    });
   });
 });
 
@@ -300,7 +285,7 @@ test("startServer serializes concurrent create and patch writes that share a rep
           mutationLock,
         }),
       ),
-      transitionIssue: handleTransitionIssue,
+      transitionIssue: () => new Response("unused", { status: 500 }),
     },
   });
 
