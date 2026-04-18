@@ -491,3 +491,144 @@ created_at: [unterminated
   });
   expect(await readIssueSource(rootDirectory, EXISTING_ISSUE.id)).toBe(originalSource);
 });
+
+test("createFilesystemTransitionIssueMutationBoundary ignores completed-only dependency validation when transitioning to in_progress", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+  const boundary = createTransitionIssueBoundary(rootDirectory, {
+    now: () => TRANSITION_TIMESTAMP,
+  });
+  const store = await writeCanonicalIssue(rootDirectory, {
+    ...EXISTING_ISSUE,
+    links: [
+      {
+        rel: "depends_on",
+        target: {
+          id: "ISSUE-0002",
+        },
+        required_before: "completed",
+      },
+    ],
+  });
+
+  await store.writeIssue({
+    spec_version: "mis/0.1",
+    id: "ISSUE-0002",
+    title: "Completed-only dependency with broken frontmatter",
+    kind: "task",
+    status: "accepted",
+    created_at: "2026-04-16T10:00:00-05:00",
+    body: "## Objective\n\nBe valid before corruption.\n",
+  });
+
+  await writeFile(
+    store.getIssueFilePath("ISSUE-0002"),
+    `---
+spec_version: mis/0.1
+id: ISSUE-0002
+title: Broken dependency
+kind: task
+status: accepted
+created_at: [unterminated
+---
+`,
+  );
+
+  const expectedRevision = await readIssueRevision(rootDirectory, EXISTING_ISSUE.id);
+  const result = await expectAppliedTransition(
+    boundary.transitionIssue({
+      ...TRANSITION_ISSUE_COMMAND,
+      input: {
+        expectedRevision,
+        to_status: "in_progress",
+      },
+    }),
+  );
+
+  expect(result.issue).toEqual({
+    ...EXISTING_ISSUE,
+    links: [
+      {
+        rel: "depends_on",
+        target: {
+          id: "ISSUE-0002",
+        },
+        required_before: "completed",
+      },
+    ],
+    status: "in_progress",
+    updated_at: TRANSITION_TIMESTAMP,
+  });
+  expect(await store.readIssue(EXISTING_ISSUE.id)).toEqual(result.issue);
+});
+
+test("createFilesystemTransitionIssueMutationBoundary ignores in-progress-only dependency validation when transitioning from in_progress to completed", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+  const boundary = createTransitionIssueBoundary(rootDirectory, {
+    now: () => TRANSITION_TIMESTAMP,
+  });
+  const store = await writeCanonicalIssue(rootDirectory, {
+    ...EXISTING_ISSUE,
+    status: "in_progress",
+    links: [
+      {
+        rel: "depends_on",
+        target: {
+          id: "ISSUE-0002",
+        },
+        required_before: "in_progress",
+      },
+    ],
+  });
+
+  await store.writeIssue({
+    spec_version: "mis/0.1",
+    id: "ISSUE-0002",
+    title: "In-progress-only dependency with broken frontmatter",
+    kind: "task",
+    status: "completed",
+    resolution: "done",
+    created_at: "2026-04-16T10:00:00-05:00",
+    body: "## Objective\n\nBe valid before corruption.\n",
+  });
+
+  await writeFile(
+    store.getIssueFilePath("ISSUE-0002"),
+    `---
+spec_version: mis/0.1
+id: ISSUE-0002
+title: Broken dependency
+kind: task
+status: accepted
+created_at: [unterminated
+---
+`,
+  );
+
+  const expectedRevision = await readIssueRevision(rootDirectory, EXISTING_ISSUE.id);
+  const result = await expectAppliedTransition(
+    boundary.transitionIssue({
+      ...TRANSITION_ISSUE_COMMAND,
+      input: {
+        expectedRevision,
+        to_status: "completed",
+      },
+    }),
+  );
+
+  expect(result.issue).toEqual({
+    ...EXISTING_ISSUE,
+    status: "completed",
+    resolution: "done",
+    links: [
+      {
+        rel: "depends_on",
+        target: {
+          id: "ISSUE-0002",
+        },
+        required_before: "in_progress",
+      },
+    ],
+    updated_at: TRANSITION_TIMESTAMP,
+  });
+  expect(await store.readIssue(EXISTING_ISSUE.id)).toEqual(result.issue);
+});

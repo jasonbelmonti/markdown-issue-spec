@@ -36,12 +36,12 @@ export interface IssueTransitionGuardResult {
   errors: readonly TransitionGuardError[];
 }
 
-interface DependencyLinkEntry {
+export interface RelevantDependencyLinkEntry {
   index: number;
   link: DependencyIssueLink;
 }
 
-interface KnownDependencyLinkEntry extends DependencyLinkEntry {
+interface KnownDependencyLinkEntry extends RelevantDependencyLinkEntry {
   dependencyIssue: Issue;
 }
 
@@ -111,11 +111,11 @@ function shouldEvaluateDependencyForTransition(
   return issue.status !== "in_progress";
 }
 
-function findRelevantDependencyLinks(
+export function findRelevantDependencyLinks(
   issue: Issue,
   nextStatus: GuardedIssueTransitionStatus,
-): DependencyLinkEntry[] {
-  const relevantLinks: DependencyLinkEntry[] = [];
+) : RelevantDependencyLinkEntry[] {
+  const relevantLinks: RelevantDependencyLinkEntry[] = [];
 
   for (const [index, link] of (issue.links ?? []).entries()) {
     if (!isDependencyLink(link)) {

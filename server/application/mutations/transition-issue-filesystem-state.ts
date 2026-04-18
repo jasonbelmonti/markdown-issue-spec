@@ -1,9 +1,8 @@
 import type {
-  DependencyIssueLink,
   Issue,
   IssueEnvelope,
-  IssueLink,
 } from "../../core/types/index.ts";
+import { findRelevantDependencyLinks } from "../../core/validation/index.ts";
 import {
   buildStartupIssueEnvelope,
   listCanonicalIssueFiles,
@@ -25,13 +24,8 @@ import {
 export interface TransitionIssueFilesystemState {
   currentParsedIssue: ParsedStartupIssueFile;
   currentParsedIssues: ParsedStartupIssueFile[];
-  loadDependencyIssues: () => Promise<Issue[]>;
+  loadDependencyIssues: (nextStatus: "in_progress" | "completed") => Promise<Issue[]>;
   store: FilesystemIssueStore;
-}
-
-interface DependencyLinkEntry {
-  index: number;
-  link: DependencyIssueLink;
 }
 
 async function loadParsedStartupIssues(
@@ -71,16 +65,6 @@ function createTargetIssueInvalidError(
   );
 }
 
-function isDependencyLink(link: IssueLink): link is DependencyIssueLink {
-  return link.rel === "depends_on";
-}
-
-function getDependencyLinkEntries(issue: Issue): DependencyLinkEntry[] {
-  return (issue.links ?? [])
-    .map((link, index) => ({ index, link }))
-    .filter((entry): entry is DependencyLinkEntry => isDependencyLink(entry.link));
-}
-
 function createDependencyIssueValidationError(
   code: "transition.dependency_issue_not_found" | "transition.dependency_issue_invalid",
   index: number,
@@ -106,10 +90,11 @@ async function loadDependencyIssues(
   indexedAt: string,
   store: FilesystemIssueStore,
   issue: Issue,
+  nextStatus: "in_progress" | "completed",
 ): Promise<Issue[]> {
   const dependencyIssuesById = new Map<string, Issue>();
 
-  for (const { index, link } of getDependencyLinkEntries(issue)) {
+  for (const { index, link } of findRelevantDependencyLinks(issue, nextStatus)) {
     if (dependencyIssuesById.has(link.target.id)) {
       continue;
     }
@@ -276,12 +261,13 @@ export async function loadTransitionIssueFilesystemState(
   return {
     currentParsedIssue,
     currentParsedIssues: await loadParsedStartupIssues(rootDirectory, indexedAt),
-    loadDependencyIssues: () =>
+    loadDependencyIssues: (nextStatus) =>
       loadDependencyIssues(
         rootDirectory,
         indexedAt,
         store,
         currentParsedIssue.issue,
+        nextStatus,
       ),
     store,
   };

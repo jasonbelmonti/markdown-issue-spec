@@ -19,6 +19,7 @@ export {
 } from "./validate-issue-graph.ts";
 export {
   evaluateIssueTransitionGuard,
+  findRelevantDependencyLinks,
   isGuardedIssueTransitionStatus,
 } from "./transition-guard.ts";
 export type {

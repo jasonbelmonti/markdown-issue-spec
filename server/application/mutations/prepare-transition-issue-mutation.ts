@@ -42,7 +42,7 @@ async function assertTransitionGuardSatisfied(
   const dependencyIssues =
     currentIssue.status !== input.to_status &&
     isGuardedIssueTransitionStatus(input.to_status)
-      ? await state.loadDependencyIssues()
+      ? await state.loadDependencyIssues(input.to_status)
       : [];
 
   const guardResult = evaluateIssueTransitionGuard({
