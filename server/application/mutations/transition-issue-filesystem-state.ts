@@ -25,7 +25,7 @@ import {
 export interface TransitionIssueFilesystemState {
   currentParsedIssue: ParsedStartupIssueFile;
   currentParsedIssues: ParsedStartupIssueFile[];
-  dependencyIssues: Issue[];
+  loadDependencyIssues: () => Promise<Issue[]>;
   store: FilesystemIssueStore;
 }
 
@@ -276,12 +276,13 @@ export async function loadTransitionIssueFilesystemState(
   return {
     currentParsedIssue,
     currentParsedIssues: await loadParsedStartupIssues(rootDirectory, indexedAt),
-    dependencyIssues: await loadDependencyIssues(
-      rootDirectory,
-      indexedAt,
-      store,
-      currentParsedIssue.issue,
-    ),
+    loadDependencyIssues: () =>
+      loadDependencyIssues(
+        rootDirectory,
+        indexedAt,
+        store,
+        currentParsedIssue.issue,
+      ),
     store,
   };
 }

@@ -360,3 +360,134 @@ test("createFilesystemTransitionIssueMutationBoundary rejects transitions when a
   ]);
   expect(await readIssueSource(rootDirectory, EXISTING_ISSUE.id)).toBe(originalSource);
 });
+
+test("createFilesystemTransitionIssueMutationBoundary skips dependency validation for canceled transitions", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+  const boundary = createTransitionIssueBoundary(rootDirectory, {
+    now: () => TRANSITION_TIMESTAMP,
+  });
+  const store = await writeCanonicalIssue(rootDirectory, {
+    ...EXISTING_ISSUE,
+    links: [
+      {
+        rel: "depends_on",
+        target: {
+          id: "ISSUE-0002",
+        },
+        required_before: "in_progress",
+      },
+    ],
+  });
+
+  await store.writeIssue({
+    spec_version: "mis/0.1",
+    id: "ISSUE-0002",
+    title: "Dependency with broken frontmatter",
+    kind: "task",
+    status: "accepted",
+    created_at: "2026-04-16T10:00:00-05:00",
+    body: "## Objective\n\nBe valid before corruption.\n",
+  });
+
+  await writeFile(
+    store.getIssueFilePath("ISSUE-0002"),
+    `---
+spec_version: mis/0.1
+id: ISSUE-0002
+title: Broken dependency
+kind: task
+status: accepted
+created_at: [unterminated
+---
+`,
+  );
+
+  const expectedRevision = await readIssueRevision(rootDirectory, EXISTING_ISSUE.id);
+  const result = await expectAppliedTransition(
+    boundary.transitionIssue({
+      ...TRANSITION_ISSUE_COMMAND,
+      input: {
+        expectedRevision,
+        to_status: "canceled",
+        resolution: "obsolete",
+      },
+    }),
+  );
+
+  expect(result.issue).toEqual({
+    ...EXISTING_ISSUE,
+    links: [
+      {
+        rel: "depends_on",
+        target: {
+          id: "ISSUE-0002",
+        },
+        required_before: "in_progress",
+      },
+    ],
+    status: "canceled",
+    resolution: "obsolete",
+    updated_at: TRANSITION_TIMESTAMP,
+  });
+  expect(await store.readIssue(EXISTING_ISSUE.id)).toEqual(result.issue);
+});
+
+test("createFilesystemTransitionIssueMutationBoundary returns revision mismatches before dependency validation", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+  const boundary = createTransitionIssueBoundary(rootDirectory, {
+    now: () => TRANSITION_TIMESTAMP,
+  });
+  const store = await writeCanonicalIssue(rootDirectory, {
+    ...EXISTING_ISSUE,
+    links: [
+      {
+        rel: "depends_on",
+        target: {
+          id: "ISSUE-0002",
+        },
+        required_before: "in_progress",
+      },
+    ],
+  });
+
+  await store.writeIssue({
+    spec_version: "mis/0.1",
+    id: "ISSUE-0002",
+    title: "Dependency with broken frontmatter",
+    kind: "task",
+    status: "completed",
+    resolution: "done",
+    created_at: "2026-04-16T10:00:00-05:00",
+    body: "## Objective\n\nBe valid before corruption.\n",
+  });
+
+  await writeFile(
+    store.getIssueFilePath("ISSUE-0002"),
+    `---
+spec_version: mis/0.1
+id: ISSUE-0002
+title: Broken dependency
+kind: task
+status: accepted
+created_at: [unterminated
+---
+`,
+  );
+
+  const originalSource = await readIssueSource(rootDirectory, EXISTING_ISSUE.id);
+  const result = await boundary.transitionIssue({
+    ...TRANSITION_ISSUE_COMMAND,
+    input: {
+      expectedRevision: "stale-revision",
+      to_status: "in_progress",
+    },
+  });
+
+  expect(result).toEqual({
+    status: "revision_mismatch",
+    issueId: EXISTING_ISSUE.id,
+    expectedRevision: "stale-revision",
+    currentRevision: computeIssueRevision(originalSource),
+  });
+  expect(await readIssueSource(rootDirectory, EXISTING_ISSUE.id)).toBe(originalSource);
+});

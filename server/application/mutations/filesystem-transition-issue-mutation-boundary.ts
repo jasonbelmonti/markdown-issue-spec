@@ -51,7 +51,7 @@ export function createFilesystemTransitionIssueMutationBoundary(
               command.issueId,
               indexedAt,
             );
-            const preparedMutation = prepareTransitionIssueMutation(
+            const preparedMutation = await prepareTransitionIssueMutation(
               filesystemState,
               command,
               input,

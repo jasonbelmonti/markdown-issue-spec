@@ -77,7 +77,7 @@ function isDependencyLink(link: IssueLink): link is DependencyIssueLink {
   return link.rel === "depends_on";
 }
 
-function isGuardedTransition(
+export function isGuardedIssueTransitionStatus(
   nextStatus: IssueStatus,
 ): nextStatus is GuardedIssueTransitionStatus {
   return nextStatus === "in_progress" || nextStatus === "completed";
@@ -218,7 +218,10 @@ export function evaluateIssueTransitionGuard(
 ): IssueTransitionGuardResult {
   const { issue, next_status: nextStatus, known_dependency_issues = [] } = input;
 
-  if (nextStatus === issue.status || !isGuardedTransition(nextStatus)) {
+  if (
+    nextStatus === issue.status ||
+    !isGuardedIssueTransitionStatus(nextStatus)
+  ) {
     return { ok: true, errors: [] };
   }
 

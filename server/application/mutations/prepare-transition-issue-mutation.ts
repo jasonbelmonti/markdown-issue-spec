@@ -1,4 +1,7 @@
-import { evaluateIssueTransitionGuard } from "../../core/validation/index.ts";
+import {
+  evaluateIssueTransitionGuard,
+  isGuardedIssueTransitionStatus,
+} from "../../core/validation/index.ts";
 import type { Issue } from "../../core/types/index.ts";
 import type {
   TransitionIssueMutationCommand,
@@ -31,15 +34,21 @@ function createRevisionMismatchResult(
   };
 }
 
-function assertTransitionGuardSatisfied(
+async function assertTransitionGuardSatisfied(
   state: TransitionIssueFilesystemState,
   currentIssue: Issue,
   input: NormalizedTransitionIssueInput,
-): void {
+): Promise<void> {
+  const dependencyIssues =
+    currentIssue.status !== input.to_status &&
+    isGuardedIssueTransitionStatus(input.to_status)
+      ? await state.loadDependencyIssues()
+      : [];
+
   const guardResult = evaluateIssueTransitionGuard({
     issue: currentIssue,
     next_status: input.to_status,
-    known_dependency_issues: state.dependencyIssues,
+    known_dependency_issues: dependencyIssues,
   });
 
   if (guardResult.ok) {
@@ -49,18 +58,18 @@ function assertTransitionGuardSatisfied(
   throw new TransitionIssueValidationError(guardResult.errors);
 }
 
-export function prepareTransitionIssueMutation(
+export async function prepareTransitionIssueMutation(
   state: TransitionIssueFilesystemState,
   command: TransitionIssueMutationCommand,
   input: NormalizedTransitionIssueInput,
-): PreparedTransitionIssueMutation | TransitionRevisionMismatchResult {
+): Promise<PreparedTransitionIssueMutation | TransitionRevisionMismatchResult> {
   const { issue: currentIssue, revision: currentRevision } = state.currentParsedIssue;
 
   if (currentRevision !== input.expectedRevision) {
     return createRevisionMismatchResult(command, input, currentRevision);
   }
 
-  assertTransitionGuardSatisfied(state, currentIssue, input);
+  await assertTransitionGuardSatisfied(state, currentIssue, input);
 
   return {
     issue: parseTransitionIssueCandidate(currentIssue, input),
