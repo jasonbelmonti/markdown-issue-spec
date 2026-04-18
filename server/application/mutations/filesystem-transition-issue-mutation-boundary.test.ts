@@ -314,3 +314,49 @@ created_at: [unterminated
   expect(error.errors[0]?.message).toContain("Failed to parse YAML frontmatter:");
   expect(await readIssueSource(rootDirectory, EXISTING_ISSUE.id)).toBe(originalSource);
 });
+
+test("createFilesystemTransitionIssueMutationBoundary rejects transitions when a dependency id is unsafe", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+  const boundary = createTransitionIssueBoundary(rootDirectory, {
+    now: () => TRANSITION_TIMESTAMP,
+  });
+
+  await writeCanonicalIssue(rootDirectory, {
+    ...EXISTING_ISSUE,
+    links: [
+      {
+        rel: "depends_on",
+        target: {
+          id: "../ISSUE-0002",
+        },
+        required_before: "in_progress",
+      },
+    ],
+  });
+
+  const expectedRevision = await readIssueRevision(rootDirectory, EXISTING_ISSUE.id);
+  const originalSource = await readIssueSource(rootDirectory, EXISTING_ISSUE.id);
+  const error = await expectTransitionValidationError(
+    boundary.transitionIssue({
+      ...TRANSITION_ISSUE_COMMAND,
+      input: {
+        expectedRevision,
+        to_status: "in_progress",
+      },
+    }),
+  );
+
+  expect(error.errors).toEqual([
+    {
+      code: "transition.dependency_issue_invalid",
+      source: "canonical",
+      path: "/links/0/target/id",
+      message:
+        'Issue id "../ISSUE-0002" cannot contain path separators when building filesystem paths.',
+      details: {
+        dependencyIssueId: "../ISSUE-0002",
+      },
+    },
+  ]);
+  expect(await readIssueSource(rootDirectory, EXISTING_ISSUE.id)).toBe(originalSource);
+});

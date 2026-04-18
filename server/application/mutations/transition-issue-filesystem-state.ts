@@ -114,9 +114,10 @@ async function loadDependencyIssues(
       continue;
     }
 
-    const dependencyFilePath = store.getIssueFilePath(link.target.id);
+    let dependencyFilePath: string | undefined;
 
     try {
+      dependencyFilePath = store.getIssueFilePath(link.target.id);
       const parsedDependencyIssue = await scanIssueFile({
         rootDirectory,
         filePath: dependencyFilePath,
@@ -134,6 +135,15 @@ async function loadDependencyIssues(
         );
       }
 
+      if (error instanceof UnsafeIssueIdError) {
+        throw createDependencyIssueValidationError(
+          "transition.dependency_issue_invalid",
+          index,
+          link.target.id,
+          error.message,
+        );
+      }
+
       if (error instanceof ScanIssueFileIdMismatchError) {
         throw createDependencyIssueValidationError(
           "transition.dependency_issue_invalid",
@@ -142,7 +152,10 @@ async function loadDependencyIssues(
           error.message,
           {
             actualIssueId: error.actualIssueId,
-            filePath: toStartupRelativeFilePath(rootDirectory, dependencyFilePath),
+            filePath:
+              dependencyFilePath === undefined
+                ? undefined
+                : toStartupRelativeFilePath(rootDirectory, dependencyFilePath),
           },
         );
       }
@@ -157,7 +170,10 @@ async function loadDependencyIssues(
           validationError.errors[0]?.message ?? "Dependency issue is invalid.",
           {
             errors: validationError.errors,
-            filePath: toStartupRelativeFilePath(rootDirectory, dependencyFilePath),
+            filePath:
+              dependencyFilePath === undefined
+                ? undefined
+                : toStartupRelativeFilePath(rootDirectory, dependencyFilePath),
           },
         );
       }
@@ -169,7 +185,10 @@ async function loadDependencyIssues(
           link.target.id,
           error.message,
           {
-            filePath: toStartupRelativeFilePath(rootDirectory, dependencyFilePath),
+            filePath:
+              dependencyFilePath === undefined
+                ? undefined
+                : toStartupRelativeFilePath(rootDirectory, dependencyFilePath),
           },
         );
       }
