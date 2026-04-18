@@ -1,4 +1,3 @@
-import { evaluateIssueTransitionGuard } from "../../core/validation/index.ts";
 import {
   createFilesystemIssueMutationLock,
   type FilesystemIssueMutationLock,
@@ -9,10 +8,9 @@ import {
   persistTransitionedIssueAndBuildEnvelope,
 } from "./transition-issue-filesystem-state.ts";
 import { normalizeTransitionIssueInput } from "./normalize-transition-issue-input.ts";
-import { parseTransitionIssueCandidate } from "./transition-issue-candidate.ts";
+import { prepareTransitionIssueMutation } from "./prepare-transition-issue-mutation.ts";
 import {
   toTransitionIssueValidationError,
-  TransitionIssueValidationError,
 } from "./transition-issue-validation-error.ts";
 import type {
   TransitionIssueMutationBoundary,
@@ -53,29 +51,14 @@ export function createFilesystemTransitionIssueMutationBoundary(
               command.issueId,
               indexedAt,
             );
-            const { currentParsedIssue } = filesystemState;
-            const { issue: currentIssue, revision: currentRevision } = currentParsedIssue;
+            const preparedMutation = prepareTransitionIssueMutation(
+              filesystemState,
+              command,
+              input,
+            );
 
-            if (currentRevision !== input.expectedRevision) {
-              return {
-                status: "revision_mismatch",
-                issueId: command.issueId,
-                expectedRevision: input.expectedRevision,
-                currentRevision,
-              } as const;
-            }
-
-            const issue = parseTransitionIssueCandidate(currentIssue, input);
-            const guardResult = evaluateIssueTransitionGuard({
-              issue: currentIssue,
-              next_status: input.to_status,
-              known_dependency_issues: filesystemState.currentParsedIssues.map(
-                (parsedIssue) => parsedIssue.issue,
-              ),
-            });
-
-            if (!guardResult.ok) {
-              throw new TransitionIssueValidationError(guardResult.errors);
+            if (preparedMutation.status === "revision_mismatch") {
+              return preparedMutation;
             }
 
             await beforePersist?.();
@@ -83,7 +66,7 @@ export function createFilesystemTransitionIssueMutationBoundary(
             const envelope = await persistTransitionedIssueAndBuildEnvelope(
               filesystemState,
               rootDirectory,
-              issue,
+              preparedMutation.issue,
               indexedAt,
             );
 
