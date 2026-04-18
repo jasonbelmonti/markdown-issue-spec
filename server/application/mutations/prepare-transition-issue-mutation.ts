@@ -39,9 +39,7 @@ function assertTransitionGuardSatisfied(
   const guardResult = evaluateIssueTransitionGuard({
     issue: currentIssue,
     next_status: input.to_status,
-    known_dependency_issues: state.currentParsedIssues.map(
-      (parsedIssue) => parsedIssue.issue,
-    ),
+    known_dependency_issues: state.dependencyIssues,
   });
 
   if (guardResult.ok) {

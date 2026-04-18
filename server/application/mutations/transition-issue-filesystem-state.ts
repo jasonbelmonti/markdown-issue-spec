@@ -1,6 +1,8 @@
 import type {
+  DependencyIssueLink,
   Issue,
   IssueEnvelope,
+  IssueLink,
 } from "../../core/types/index.ts";
 import {
   buildStartupIssueEnvelope,
@@ -23,7 +25,13 @@ import {
 export interface TransitionIssueFilesystemState {
   currentParsedIssue: ParsedStartupIssueFile;
   currentParsedIssues: ParsedStartupIssueFile[];
+  dependencyIssues: Issue[];
   store: FilesystemIssueStore;
+}
+
+interface DependencyLinkEntry {
+  index: number;
+  link: DependencyIssueLink;
 }
 
 async function loadParsedStartupIssues(
@@ -61,6 +69,116 @@ function createTargetIssueInvalidError(
       details,
     }),
   );
+}
+
+function isDependencyLink(link: IssueLink): link is DependencyIssueLink {
+  return link.rel === "depends_on";
+}
+
+function getDependencyLinkEntries(issue: Issue): DependencyLinkEntry[] {
+  return (issue.links ?? [])
+    .map((link, index) => ({ index, link }))
+    .filter((entry): entry is DependencyLinkEntry => isDependencyLink(entry.link));
+}
+
+function createDependencyIssueValidationError(
+  code: "transition.dependency_issue_not_found" | "transition.dependency_issue_invalid",
+  index: number,
+  dependencyIssueId: string,
+  message: string,
+  details?: Record<string, unknown>,
+) {
+  return createTransitionIssueValidationError(
+    createTransitionIssueCanonicalValidationError({
+      code,
+      path: `/links/${index}/target/id`,
+      message,
+      details: {
+        dependencyIssueId,
+        ...details,
+      },
+    }),
+  );
+}
+
+async function loadDependencyIssues(
+  rootDirectory: string,
+  indexedAt: string,
+  store: FilesystemIssueStore,
+  issue: Issue,
+): Promise<Issue[]> {
+  const dependencyIssuesById = new Map<string, Issue>();
+
+  for (const { index, link } of getDependencyLinkEntries(issue)) {
+    if (dependencyIssuesById.has(link.target.id)) {
+      continue;
+    }
+
+    const dependencyFilePath = store.getIssueFilePath(link.target.id);
+
+    try {
+      const parsedDependencyIssue = await scanIssueFile({
+        rootDirectory,
+        filePath: dependencyFilePath,
+        indexedAt,
+      });
+
+      dependencyIssuesById.set(link.target.id, parsedDependencyIssue.issue);
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+        throw createDependencyIssueValidationError(
+          "transition.dependency_issue_not_found",
+          index,
+          link.target.id,
+          `Dependency issue ${link.target.id} could not be loaded for transition validation.`,
+        );
+      }
+
+      if (error instanceof ScanIssueFileIdMismatchError) {
+        throw createDependencyIssueValidationError(
+          "transition.dependency_issue_invalid",
+          index,
+          link.target.id,
+          error.message,
+          {
+            actualIssueId: error.actualIssueId,
+            filePath: toStartupRelativeFilePath(rootDirectory, dependencyFilePath),
+          },
+        );
+      }
+
+      const validationError = toTransitionIssueValidationError(error);
+
+      if (validationError !== undefined) {
+        throw createDependencyIssueValidationError(
+          "transition.dependency_issue_invalid",
+          index,
+          link.target.id,
+          validationError.errors[0]?.message ?? "Dependency issue is invalid.",
+          {
+            errors: validationError.errors,
+            filePath: toStartupRelativeFilePath(rootDirectory, dependencyFilePath),
+          },
+        );
+      }
+
+      if (error instanceof Error) {
+        throw createDependencyIssueValidationError(
+          "transition.dependency_issue_invalid",
+          index,
+          link.target.id,
+          error.message,
+          {
+            filePath: toStartupRelativeFilePath(rootDirectory, dependencyFilePath),
+          },
+        );
+      }
+
+      throw error;
+    }
+  }
+
+  return Array.from(dependencyIssuesById.values());
 }
 
 export async function loadTransitionIssueFilesystemState(
@@ -139,6 +257,12 @@ export async function loadTransitionIssueFilesystemState(
   return {
     currentParsedIssue,
     currentParsedIssues: await loadParsedStartupIssues(rootDirectory, indexedAt),
+    dependencyIssues: await loadDependencyIssues(
+      rootDirectory,
+      indexedAt,
+      store,
+      currentParsedIssue.issue,
+    ),
     store,
   };
 }

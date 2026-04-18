@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -242,5 +242,75 @@ test("createFilesystemTransitionIssueMutationBoundary rejects lifecycle guard fa
       related_issue_ids: [EXISTING_ISSUE.id],
     },
   ]);
+  expect(await readIssueSource(rootDirectory, EXISTING_ISSUE.id)).toBe(originalSource);
+});
+
+test("createFilesystemTransitionIssueMutationBoundary rejects transitions when a dependency file cannot be validated", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+  const boundary = createTransitionIssueBoundary(rootDirectory, {
+    now: () => TRANSITION_TIMESTAMP,
+  });
+  const store = await writeCanonicalIssue(rootDirectory, {
+    ...EXISTING_ISSUE,
+    links: [
+      {
+        rel: "depends_on",
+        target: {
+          id: "ISSUE-0002",
+        },
+        required_before: "in_progress",
+      },
+    ],
+  });
+
+  await store.writeIssue({
+    spec_version: "mis/0.1",
+    id: "ISSUE-0002",
+    title: "Dependency with broken frontmatter",
+    kind: "task",
+    status: "completed",
+    resolution: "done",
+    created_at: "2026-04-16T10:00:00-05:00",
+    body: "## Objective\n\nBe valid before corruption.\n",
+  });
+
+  const dependencyFilePath = store.getIssueFilePath("ISSUE-0002");
+  await writeFile(
+    dependencyFilePath,
+    `---
+spec_version: mis/0.1
+id: ISSUE-0002
+title: Broken dependency
+kind: task
+status: accepted
+created_at: [unterminated
+---
+`,
+  );
+
+  const expectedRevision = await readIssueRevision(rootDirectory, EXISTING_ISSUE.id);
+  const originalSource = await readIssueSource(rootDirectory, EXISTING_ISSUE.id);
+  const error = await expectTransitionValidationError(
+    boundary.transitionIssue({
+      ...TRANSITION_ISSUE_COMMAND,
+      input: {
+        expectedRevision,
+        to_status: "in_progress",
+      },
+    }),
+  );
+
+  expect(error.errors).toMatchObject([
+    {
+      code: "transition.dependency_issue_invalid",
+      source: "canonical",
+      path: "/links/0/target/id",
+      details: {
+        dependencyIssueId: "ISSUE-0002",
+        filePath: "vault/issues/ISSUE-0002.md",
+      },
+    },
+  ]);
+  expect(error.errors[0]?.message).toContain("Failed to parse YAML frontmatter:");
   expect(await readIssueSource(rootDirectory, EXISTING_ISSUE.id)).toBe(originalSource);
 });
