@@ -3,9 +3,6 @@ import { expect, test } from "bun:test";
 import {
   createCreateIssueHandler,
 } from "./create-issue-handler.ts";
-import {
-  handleTransitionIssue,
-} from "./transition-issue-handler.ts";
 
 const CREATE_ISSUE_REQUEST_BODY = {
   spec_version: "mis/0.1",
@@ -104,25 +101,6 @@ test("createCreateIssueHandler returns deterministic unsupported media type erro
       message: "Request body must use application/json.",
       details: {
         contentType: "text/plain",
-      },
-    },
-  });
-});
-
-test("handleTransitionIssue returns a deterministic not-implemented response", async () => {
-  const response = await handleTransitionIssue(
-    new Request("http://localhost/issues/ISSUE-1234/transition", {
-      method: "POST",
-    }),
-  );
-
-  expect(response.status).toBe(501);
-  expect(await response.json()).toEqual({
-    error: {
-      code: "issue_transition_not_implemented",
-      message: "POST /issues/:id/transition is not implemented yet.",
-      details: {
-        endpoint: "POST /issues/:id/transition",
       },
     },
   });

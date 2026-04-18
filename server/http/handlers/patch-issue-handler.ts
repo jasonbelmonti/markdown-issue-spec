@@ -10,23 +10,9 @@ import { createApiErrorResponse } from "../errors/error-response.ts";
 import { parseJsonBody } from "../request/parse-json-body.ts";
 import { jsonResponse } from "../response/json.ts";
 import { defaultFilesystemIssueMutationLock } from "./default-filesystem-issue-mutation-lock.ts";
+import { getIssueIdFromRequest } from "./issue-id-from-request.ts";
 import { createNotImplementedMutationResponse } from "./not-implemented-mutation-response.ts";
 import type { HttpRouteHandler, HttpRouteRequest } from "./types.ts";
-
-function getIssueIdFromRequest(request: HttpRouteRequest): string {
-  if (request.params?.id !== undefined) {
-    return request.params.id;
-  }
-
-  const pathname = new URL(request.url).pathname;
-  const encodedIssueId = pathname.split("/").at(-1) ?? "";
-
-  try {
-    return decodeURIComponent(encodedIssueId);
-  } catch {
-    return encodedIssueId;
-  }
-}
 
 const defaultIssueMutationBoundary = createFilesystemPatchIssueMutationBoundary({
   rootDirectory: process.cwd(),
