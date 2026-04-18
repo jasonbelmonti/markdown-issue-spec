@@ -18,7 +18,6 @@ import {
   createTransitionIssueRequestValidationError,
   createTransitionIssueValidationError,
   toTransitionIssueValidationError,
-  TransitionIssueValidationError,
 } from "./transition-issue-validation-error.ts";
 
 export interface TransitionIssueFilesystemState {
@@ -44,6 +43,23 @@ async function loadParsedStartupIssues(
 
   return parsedIssues.filter(
     (parsedIssue): parsedIssue is ParsedStartupIssueFile => parsedIssue !== null,
+  );
+}
+
+function createTargetIssueInvalidError(
+  rootDirectory: string,
+  filePath: string,
+  issueId: string,
+  message: string,
+  details: Record<string, unknown>,
+) {
+  return createTransitionIssueValidationError(
+    createTransitionIssueCanonicalValidationError({
+      code: "transition.target_issue_invalid",
+      path: toStartupRelativeFilePath(rootDirectory, filePath),
+      message,
+      details,
+    }),
   );
 }
 
@@ -87,16 +103,15 @@ export async function loadTransitionIssueFilesystemState(
     }
 
     if (error instanceof ScanIssueFileIdMismatchError) {
-      throw createTransitionIssueValidationError(
-        createTransitionIssueCanonicalValidationError({
-          code: "transition.target_issue_invalid",
-          path: toStartupRelativeFilePath(rootDirectory, filePath),
-          message: error.message,
-          details: {
-            issueId,
-            actualIssueId: error.actualIssueId,
-          },
-        }),
+      throw createTargetIssueInvalidError(
+        rootDirectory,
+        filePath,
+        issueId,
+        error.message,
+        {
+          issueId,
+          actualIssueId: error.actualIssueId,
+        },
       );
     }
 
@@ -107,15 +122,14 @@ export async function loadTransitionIssueFilesystemState(
     }
 
     if (error instanceof Error) {
-      throw createTransitionIssueValidationError(
-        createTransitionIssueCanonicalValidationError({
-          code: "transition.target_issue_invalid",
-          path: toStartupRelativeFilePath(rootDirectory, filePath),
-          message: error.message,
-          details: {
-            issueId,
-          },
-        }),
+      throw createTargetIssueInvalidError(
+        rootDirectory,
+        filePath,
+        issueId,
+        error.message,
+        {
+          issueId,
+        },
       );
     }
 

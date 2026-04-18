@@ -53,25 +53,21 @@ export function createFilesystemTransitionIssueMutationBoundary(
               command.issueId,
               indexedAt,
             );
+            const { currentParsedIssue } = filesystemState;
+            const { issue: currentIssue, revision: currentRevision } = currentParsedIssue;
 
-            if (
-              filesystemState.currentParsedIssue.revision !==
-              input.expectedRevision
-            ) {
+            if (currentRevision !== input.expectedRevision) {
               return {
                 status: "revision_mismatch",
                 issueId: command.issueId,
                 expectedRevision: input.expectedRevision,
-                currentRevision: filesystemState.currentParsedIssue.revision,
+                currentRevision,
               } as const;
             }
 
-            const issue = parseTransitionIssueCandidate(
-              filesystemState.currentParsedIssue.issue,
-              input,
-            );
+            const issue = parseTransitionIssueCandidate(currentIssue, input);
             const guardResult = evaluateIssueTransitionGuard({
-              issue: filesystemState.currentParsedIssue.issue,
+              issue: currentIssue,
               next_status: input.to_status,
               known_dependency_issues: filesystemState.currentParsedIssues.map(
                 (parsedIssue) => parsedIssue.issue,

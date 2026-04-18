@@ -1,7 +1,4 @@
-import type {
-  IssueResolution,
-  IssueStatus,
-} from "../../core/types/index.ts";
+import type { IssueStatus } from "../../core/types/index.ts";
 import type { TransitionIssueInput } from "./transition-issue-input.ts";
 import {
   createTransitionIssueRequestValidationError,
@@ -25,7 +22,6 @@ const TRANSITION_INPUT_FIELD_NAMES = [
 
 export interface NormalizedTransitionIssueInput extends TransitionIssueInput {
   to_status: IssueStatus;
-  resolution?: IssueResolution;
 }
 
 function hasOwn(record: Record<string, unknown>, key: string): boolean {
@@ -140,7 +136,7 @@ export function normalizeTransitionIssueInput(
     expectedRevision: input.expectedRevision,
     to_status: input.to_status,
     ...(hasOwn(input, "resolution")
-      ? { resolution: input.resolution as IssueResolution }
+      ? { resolution: input.resolution }
       : {}),
   };
 }

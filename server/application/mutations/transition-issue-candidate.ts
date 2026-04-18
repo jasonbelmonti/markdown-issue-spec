@@ -5,7 +5,6 @@ import type { NormalizedTransitionIssueInput } from "./normalize-transition-issu
 import {
   createTransitionIssueRequestValidationError,
   createTransitionIssueValidationError,
-  TransitionIssueValidationError,
 } from "./transition-issue-validation-error.ts";
 
 function assertStatusChange(
