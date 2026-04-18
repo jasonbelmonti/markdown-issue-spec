@@ -224,6 +224,45 @@ test("startServer keeps the structured json 404 fallback for unmatched routes", 
   });
 });
 
+test("startServer rejects invalid create requests without writing issue files", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+
+  await withServer(rootDirectory, async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/issues`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        ...CREATE_ISSUE_REQUEST_BODY,
+        body: 123,
+      }),
+    });
+
+    expect(response.status).toBe(422);
+    expect(await response.json()).toEqual({
+      error: {
+        code: "issue_create_validation_failed",
+        message: "Issue create validation failed.",
+        details: {
+          errors: [
+            {
+              code: "create.invalid_body",
+              source: "request",
+              path: "/body",
+              message: "Create `body` must be a string when present.",
+            },
+          ],
+        },
+      },
+    });
+  });
+
+  await expect(readdir(join(rootDirectory, "vault", "issues"))).rejects.toMatchObject({
+    code: "ENOENT",
+  });
+});
+
 test("startServer serializes concurrent create and patch writes that share a repository mutation lock", async () => {
   const rootDirectory = await createTemporaryRootDirectory();
   const store = new FilesystemIssueStore({ rootDirectory });
