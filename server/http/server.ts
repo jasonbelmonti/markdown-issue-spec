@@ -1,13 +1,20 @@
 import { createApiError } from "./errors/api-error.ts";
 import { createApiErrorResponse } from "./errors/error-response.ts";
 import { defaultMutationHandlers } from "./handlers/default-mutation-handlers.ts";
-import type { HttpRouteDefinition, MutationRouteHandlers } from "./handlers/types.ts";
+import { defaultQueryHandlers } from "./handlers/default-query-handlers.ts";
+import type {
+  MutationRouteHandlers,
+  QueryRouteHandlers,
+} from "./handlers/types.ts";
+import type { HttpRouteDefinition } from "./route-contract.ts";
 import { createMutationRouteDefinitions } from "./routes/mutation-routes.ts";
+import { createQueryRouteDefinitions } from "./routes/query-routes.ts";
 
 export interface HttpServerOptions {
   hostname?: string;
   port?: number;
   mutationHandlers?: MutationRouteHandlers;
+  queryHandlers?: QueryRouteHandlers;
 }
 
 const DEFAULT_HOSTNAME = "127.0.0.1";
@@ -46,16 +53,24 @@ function resolveMutationHandlers(
   return mutationHandlers ?? defaultMutationHandlers;
 }
 
+function resolveQueryHandlers(
+  queryHandlers: QueryRouteHandlers | undefined,
+): QueryRouteHandlers {
+  return queryHandlers ?? defaultQueryHandlers;
+}
+
 export function startServer(
   options: HttpServerOptions = {},
 ): Bun.Server {
   const hostname = options.hostname ?? DEFAULT_HOSTNAME;
   const port = options.port ?? DEFAULT_PORT;
-  const routes = createBunRoutes(
-    createMutationRouteDefinitions(
+  const routeDefinitions = [
+    ...createMutationRouteDefinitions(
       resolveMutationHandlers(options.mutationHandlers),
     ),
-  );
+    ...createQueryRouteDefinitions(resolveQueryHandlers(options.queryHandlers)),
+  ];
+  const routes = createBunRoutes(routeDefinitions);
 
   const server = Bun.serve({
     hostname,

@@ -1,12 +1,4 @@
-export type HttpRouteMethod = "PATCH" | "POST";
-
-export interface HttpRouteRequest extends Request {
-  params?: Record<string, string>;
-}
-
-export type HttpRouteHandler = (
-  request: HttpRouteRequest,
-) => Response | Promise<Response>;
+import type { HttpRouteHandler } from "../route-contract.ts";
 
 export interface MutationRouteHandlers {
   createIssue: HttpRouteHandler;
@@ -14,8 +6,8 @@ export interface MutationRouteHandlers {
   transitionIssue: HttpRouteHandler;
 }
 
-export interface HttpRouteDefinition {
-  pathname: string;
-  method: HttpRouteMethod;
-  handler: HttpRouteHandler;
+export interface QueryRouteHandlers {
+  getIssue: HttpRouteHandler;
+  listIssues: HttpRouteHandler;
+  listValidationErrors: HttpRouteHandler;
 }

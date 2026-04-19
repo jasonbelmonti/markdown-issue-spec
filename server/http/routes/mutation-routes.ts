@@ -1,7 +1,5 @@
-import type {
-  HttpRouteDefinition,
-  MutationRouteHandlers,
-} from "../handlers/types.ts";
+import type { MutationRouteHandlers } from "../handlers/types.ts";
+import type { HttpRouteDefinition } from "../route-contract.ts";
 
 export function createMutationRouteDefinitions(
   handlers: MutationRouteHandlers,
