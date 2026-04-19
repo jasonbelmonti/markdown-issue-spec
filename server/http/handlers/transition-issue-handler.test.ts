@@ -5,10 +5,10 @@ import { join } from "node:path";
 
 import { createFilesystemTransitionIssueMutationBoundary } from "../../application/mutations/filesystem-transition-issue-mutation-boundary.ts";
 import type { Issue } from "../../core/types/index.ts";
+import type { HttpRouteRequest } from "../route-contract.ts";
 import { computeIssueRevision } from "../../store/issue-revision.ts";
 import { FilesystemIssueStore } from "../../store/index.ts";
 import { createTransitionIssueHandler } from "./transition-issue-handler.ts";
-import type { HttpRouteRequest } from "./types.ts";
 
 const TRANSITION_TIMESTAMP = "2026-04-16T22:30:00-05:00";
 

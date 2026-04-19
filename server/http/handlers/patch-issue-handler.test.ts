@@ -5,10 +5,10 @@ import { join } from "node:path";
 
 import { createFilesystemPatchIssueMutationBoundary } from "../../application/mutations/filesystem-patch-issue-mutation-boundary.ts";
 import type { Issue } from "../../core/types/index.ts";
+import type { HttpRouteRequest } from "../route-contract.ts";
 import { computeIssueRevision } from "../../store/issue-revision.ts";
 import { FilesystemIssueStore } from "../../store/index.ts";
 import { createPatchIssueHandler } from "./patch-issue-handler.ts";
-import type { HttpRouteRequest } from "./types.ts";
 
 const PATCH_TIMESTAMP = "2026-04-12T12:34:00-05:00";
 

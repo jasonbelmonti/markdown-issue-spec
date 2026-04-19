@@ -1,6 +1,6 @@
 import { createApiError } from "../errors/api-error.ts";
 import { createApiErrorResponse } from "../errors/error-response.ts";
-import type { HttpRouteHandler } from "./types.ts";
+import type { HttpRouteHandler } from "../route-contract.ts";
 
 export interface NotImplementedHandlerOptions {
   code: string;

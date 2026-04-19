@@ -6,13 +6,13 @@ import { CreateIssueValidationError } from "../../application/mutations/create-i
 import { createFilesystemCreateIssueMutationBoundary } from "../../application/mutations/filesystem-create-issue-mutation-boundary.ts";
 import { createApiErrorResponse } from "../errors/error-response.ts";
 import { parseJsonBody } from "../request/parse-json-body.ts";
+import type { HttpRouteHandler } from "../route-contract.ts";
 import {
   createCreateValidationErrorResponse,
   createCreatedIssueResponse,
 } from "./create-issue-handler-responses.ts";
 import { defaultFilesystemIssueMutationLock } from "./default-filesystem-issue-mutation-lock.ts";
 import { createNotImplementedMutationResponse } from "./not-implemented-mutation-response.ts";
-import type { HttpRouteHandler } from "./types.ts";
 
 const defaultCreateIssueMutationBoundary = createFilesystemCreateIssueMutationBoundary({
   rootDirectory: process.cwd(),

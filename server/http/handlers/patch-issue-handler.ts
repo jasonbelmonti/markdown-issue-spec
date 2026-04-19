@@ -9,10 +9,10 @@ import { createApiError } from "../errors/api-error.ts";
 import { createApiErrorResponse } from "../errors/error-response.ts";
 import { parseJsonBody } from "../request/parse-json-body.ts";
 import { jsonResponse } from "../response/json.ts";
+import type { HttpRouteHandler, HttpRouteRequest } from "../route-contract.ts";
 import { defaultFilesystemIssueMutationLock } from "./default-filesystem-issue-mutation-lock.ts";
 import { getIssueIdFromRequest } from "./issue-id-from-request.ts";
 import { createNotImplementedMutationResponse } from "./not-implemented-mutation-response.ts";
-import type { HttpRouteHandler, HttpRouteRequest } from "./types.ts";
 
 const defaultIssueMutationBoundary = createFilesystemPatchIssueMutationBoundary({
   rootDirectory: process.cwd(),

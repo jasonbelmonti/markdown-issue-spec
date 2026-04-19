@@ -1,4 +1,4 @@
-import type { HttpRouteRequest } from "./types.ts";
+import type { HttpRouteRequest } from "../route-contract.ts";
 
 export function getIssueIdFromRequest(
   request: HttpRouteRequest,

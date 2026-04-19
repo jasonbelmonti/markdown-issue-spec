@@ -193,6 +193,60 @@ test("startServer serves real create and patch outcomes", async () => {
   });
 });
 
+test("startServer wires placeholder query routes alongside live mutation routes", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+  const store = new FilesystemIssueStore({ rootDirectory });
+
+  await store.writeIssue(EXISTING_ISSUE);
+
+  await withServer(rootDirectory, async (baseUrl) => {
+    const notImplementedQueryExpectations = [
+      {
+        pathname: `/issues/${EXISTING_ISSUE.id}`,
+        code: "issue_get_not_implemented",
+        endpoint: "GET /issues/:id",
+      },
+      {
+        pathname: "/issues",
+        code: "issue_list_not_implemented",
+        endpoint: "GET /issues",
+      },
+      {
+        pathname: "/validation/errors",
+        code: "validation_error_list_not_implemented",
+        endpoint: "GET /validation/errors",
+      },
+    ] as const;
+    const createResponse = await fetch(`${baseUrl}/issues`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(CREATE_ISSUE_REQUEST_BODY),
+    });
+    const createBody = await createResponse.json() as IssueEnvelope;
+
+    for (const expectation of notImplementedQueryExpectations) {
+      const response = await fetch(`${baseUrl}${expectation.pathname}`);
+
+      expect(response.status).toBe(501);
+      expect(await response.json()).toEqual({
+        error: {
+          code: expectation.code,
+          message: `${expectation.endpoint} is not implemented yet.`,
+          details: {
+            endpoint: expectation.endpoint,
+          },
+        },
+      });
+    }
+
+    expect(createResponse.status).toBe(201);
+    expect(createBody.issue.id).toBe(CREATED_ISSUE_ID);
+    expect(await store.readIssue(CREATED_ISSUE_ID)).toEqual(createBody.issue);
+  });
+});
+
 test("startServer keeps the structured json 404 fallback for unmatched routes", async () => {
   const rootDirectory = await createTemporaryRootDirectory();
 
