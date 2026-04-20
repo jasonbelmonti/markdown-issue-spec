@@ -379,6 +379,93 @@ test("listIssueEnvelopes resumes pagination correctly across mixed-offset timest
   }
 });
 
+test("listIssueEnvelopes preserves sub-millisecond precision for ordering and updatedAfter", () => {
+  const database = openMemoryProjectionDatabase();
+
+  try {
+    indexEnvelopes(database, [
+      createEnvelope(
+        createIssue({
+          id: "ISSUE-2400",
+          title: "Earliest precise timestamp",
+          createdAt: "2026-04-19T22:30:00.0003Z",
+        }),
+      ),
+      createEnvelope(
+        createIssue({
+          id: "ISSUE-2401",
+          title: "Latest precise timestamp",
+          createdAt: "2026-04-19T22:30:00.0004Z",
+        }),
+      ),
+      createEnvelope(
+        createIssue({
+          id: "ISSUE-2402",
+          title: "Middle precise timestamp",
+          createdAt: "2026-04-19T22:30:00.00035Z",
+        }),
+      ),
+    ]);
+
+    expect(listIssueIds(database, { limit: 10 })).toEqual([
+      "ISSUE-2401",
+      "ISSUE-2402",
+      "ISSUE-2400",
+    ]);
+    expect(listIssueIds(database, {
+      limit: 10,
+      updatedAfter: "2026-04-19T22:30:00.00035Z",
+    })).toEqual(["ISSUE-2401"]);
+  } finally {
+    database.close();
+  }
+});
+
+test("listIssueEnvelopes resumes pagination correctly across sub-millisecond timestamps", () => {
+  const database = openMemoryProjectionDatabase();
+
+  try {
+    indexEnvelopes(database, [
+      createEnvelope(
+        createIssue({
+          id: "ISSUE-2500",
+          title: "Earliest precise timestamp",
+          createdAt: "2026-04-19T22:30:00.0003Z",
+        }),
+      ),
+      createEnvelope(
+        createIssue({
+          id: "ISSUE-2501",
+          title: "Latest precise timestamp",
+          createdAt: "2026-04-19T22:30:00.0004Z",
+        }),
+      ),
+      createEnvelope(
+        createIssue({
+          id: "ISSUE-2502",
+          title: "Middle precise timestamp",
+          createdAt: "2026-04-19T22:30:00.00035Z",
+        }),
+      ),
+    ]);
+
+    const firstPage = listIssueEnvelopes(database, { limit: 2 });
+
+    expect(getIssueIds(firstPage.items)).toEqual(["ISSUE-2501", "ISSUE-2502"]);
+    expect(firstPage.nextCursor).toEqual(expect.any(String));
+
+    const secondPage = listIssueEnvelopes(database, {
+      limit: 2,
+      cursor: firstPage.nextCursor ?? undefined,
+    });
+
+    expect(getIssueIds(secondPage.items)).toEqual(["ISSUE-2500"]);
+    expect(secondPage.nextCursor).toBeNull();
+  } finally {
+    database.close();
+  }
+});
+
 test("listIssueEnvelopes supports the MVP filters and preserves the selected order after hydration", () => {
   const database = openMemoryProjectionDatabase();
 

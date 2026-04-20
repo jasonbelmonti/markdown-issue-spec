@@ -2,16 +2,18 @@ import { Buffer } from "node:buffer";
 
 interface IssueListCursorPayload {
   v: number;
-  effectiveUpdatedAt: string;
+  utcSecond: string;
+  fractionalDigits: string;
   issueId: string;
 }
 
 export interface IssueListCursor {
-  effectiveUpdatedAt: string;
+  utcSecond: string;
+  fractionalDigits: string;
   issueId: string;
 }
 
-const ISSUE_LIST_CURSOR_VERSION = 1;
+const ISSUE_LIST_CURSOR_VERSION = 2;
 const BASE64_URL_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 function throwInvalidIssueListCursor(): never {
@@ -50,8 +52,9 @@ function isIssueListCursorPayload(
 
   return (
     payload.v === ISSUE_LIST_CURSOR_VERSION
-    && typeof payload.effectiveUpdatedAt === "string"
-    && payload.effectiveUpdatedAt.length > 0
+    && typeof payload.utcSecond === "string"
+    && payload.utcSecond.length > 0
+    && typeof payload.fractionalDigits === "string"
     && typeof payload.issueId === "string"
     && payload.issueId.length > 0
   );
@@ -61,7 +64,8 @@ export function encodeIssueListCursor(cursor: IssueListCursor): string {
   return toBase64Url(
     JSON.stringify({
       v: ISSUE_LIST_CURSOR_VERSION,
-      effectiveUpdatedAt: cursor.effectiveUpdatedAt,
+      utcSecond: cursor.utcSecond,
+      fractionalDigits: cursor.fractionalDigits,
       issueId: cursor.issueId,
     } satisfies IssueListCursorPayload),
   );
@@ -81,7 +85,8 @@ export function decodeIssueListCursor(cursor: string): IssueListCursor {
   }
 
   return {
-    effectiveUpdatedAt: parsed.effectiveUpdatedAt,
+    utcSecond: parsed.utcSecond,
+    fractionalDigits: parsed.fractionalDigits,
     issueId: parsed.issueId,
   };
 }

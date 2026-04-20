@@ -2,9 +2,15 @@ import type { Database } from "bun:sqlite";
 
 import type { Issue, Rfc3339Timestamp } from "../core/types/index.ts";
 import {
+  type IssueListCursor,
   decodeIssueListCursor,
   encodeIssueListCursor,
 } from "./issue-list-cursor.ts";
+import {
+  compareRfc3339SortKeys,
+  normalizeRfc3339SortKey,
+  type Rfc3339SortKey,
+} from "./rfc3339-sort-key.ts";
 import { PROJECTION_TABLE_NAMES } from "./schema.ts";
 
 type SqlParameter = string | number;
@@ -14,9 +20,9 @@ interface ProjectedIssueListRow {
   effective_updated_at: string;
 }
 
-interface BuiltIssueListQuery {
-  sql: string;
-  parameters: SqlParameter[];
+interface ProjectionIssueListCandidate {
+  issueId: string;
+  sortKey: Rfc3339SortKey;
 }
 
 export interface ListIssueEnvelopesQuery {
@@ -39,8 +45,6 @@ export interface ProjectionIssueListPage {
 
 const ISSUE_TABLE_ALIAS = "issues";
 const EFFECTIVE_UPDATED_AT_SQL = `COALESCE(${ISSUE_TABLE_ALIAS}.updated_at, ${ISSUE_TABLE_ALIAS}.created_at)`;
-const NORMALIZED_TIMESTAMP_FORMAT = "'%Y-%m-%dT%H:%M:%fZ'";
-const EFFECTIVE_UPDATED_AT_SORT_KEY_SQL = `strftime(${NORMALIZED_TIMESTAMP_FORMAT}, ${EFFECTIVE_UPDATED_AT_SQL})`;
 
 function appendParameter(
   parameters: SqlParameter[],
@@ -77,43 +81,16 @@ function buildLinkTargetExistsClause(
   )`;
 }
 
-function buildNormalizedTimestampSql(valueSql: string): string {
-  return `strftime(${NORMALIZED_TIMESTAMP_FORMAT}, ${valueSql})`;
-}
-
-function appendCursorCondition(
-  conditions: string[],
-  parameters: SqlParameter[],
-  cursor: string,
-): void {
-  const decodedCursor = decodeIssueListCursor(cursor);
-  const cursorUpdatedAtPlaceholder = appendParameter(
-    parameters,
-    decodedCursor.effectiveUpdatedAt,
-  );
-  const cursorIssueIdPlaceholder = appendParameter(
-    parameters,
-    decodedCursor.issueId,
-  );
-
-  conditions.push(
-    `(
-      ${EFFECTIVE_UPDATED_AT_SORT_KEY_SQL} < ${cursorUpdatedAtPlaceholder}
-      OR (
-        ${EFFECTIVE_UPDATED_AT_SORT_KEY_SQL} = ${cursorUpdatedAtPlaceholder}
-        AND ${ISSUE_TABLE_ALIAS}.issue_id > ${cursorIssueIdPlaceholder}
-      )
-    )`,
-  );
-}
-
 function assertPositiveIntegerLimit(limit: number): void {
   if (!Number.isInteger(limit) || limit < 1) {
     throw new Error("Issue list limit must be a positive integer.");
   }
 }
 
-function buildIssueListQuery(query: ListIssueEnvelopesQuery): BuiltIssueListQuery {
+function buildIssueListQuery(query: ListIssueEnvelopesQuery): {
+  sql: string;
+  parameters: SqlParameter[];
+} {
   const conditions: string[] = [];
   const parameters: SqlParameter[] = [];
 
@@ -172,57 +149,121 @@ function buildIssueListQuery(query: ListIssueEnvelopesQuery): BuiltIssueListQuer
       `${ISSUE_TABLE_ALIAS}.ready = ${appendParameter(parameters, query.ready ? 1 : 0)}`,
     );
   }
-
-  if (query.updatedAfter !== undefined) {
-    const updatedAfterPlaceholder = appendParameter(parameters, query.updatedAfter);
-
-    conditions.push(
-      `${EFFECTIVE_UPDATED_AT_SORT_KEY_SQL} > ${buildNormalizedTimestampSql(updatedAfterPlaceholder)}`,
-    );
-  }
-
-  if (query.cursor !== undefined) {
-    appendCursorCondition(conditions, parameters, query.cursor);
-  }
-
-  const limitPlaceholder = appendParameter(parameters, query.limit + 1);
   const whereClause =
     conditions.length === 0 ? "" : `WHERE ${conditions.join("\n  AND ")}`;
 
   return {
     sql: `SELECT
       ${ISSUE_TABLE_ALIAS}.issue_id,
-      ${EFFECTIVE_UPDATED_AT_SORT_KEY_SQL} AS effective_updated_at
+      ${EFFECTIVE_UPDATED_AT_SQL} AS effective_updated_at
     FROM ${PROJECTION_TABLE_NAMES.issues} AS ${ISSUE_TABLE_ALIAS}
-    ${whereClause}
-    ORDER BY effective_updated_at DESC, ${ISSUE_TABLE_ALIAS}.issue_id ASC
-    LIMIT ${limitPlaceholder}`,
+    ${whereClause}`,
     parameters,
   };
 }
 
+function compareIssueIds(left: string, right: string): number {
+  if (left === right) {
+    return 0;
+  }
+
+  return left < right ? -1 : 1;
+}
+
+function compareCandidatesForPageOrder(
+  left: ProjectionIssueListCandidate,
+  right: ProjectionIssueListCandidate,
+): number {
+  const sortKeyComparison = compareRfc3339SortKeys(left.sortKey, right.sortKey);
+
+  if (sortKeyComparison !== 0) {
+    return -sortKeyComparison;
+  }
+
+  return compareIssueIds(left.issueId, right.issueId);
+}
+
+function isCandidateAfterCursor(
+  candidate: ProjectionIssueListCandidate,
+  cursor: IssueListCursor,
+): boolean {
+  const sortKeyComparison = compareRfc3339SortKeys(candidate.sortKey, {
+    utcSecond: cursor.utcSecond,
+    fractionalDigits: cursor.fractionalDigits,
+  });
+
+  if (sortKeyComparison !== 0) {
+    return sortKeyComparison < 0;
+  }
+
+  return compareIssueIds(candidate.issueId, cursor.issueId) > 0;
+}
+
+function buildCandidate(
+  row: ProjectedIssueListRow,
+): ProjectionIssueListCandidate {
+  return {
+    issueId: row.issue_id,
+    sortKey: normalizeRfc3339SortKey(row.effective_updated_at),
+  };
+}
+
+function applyUpdatedAfterFilter(
+  candidates: readonly ProjectionIssueListCandidate[],
+  updatedAfter: Rfc3339Timestamp | undefined,
+): ProjectionIssueListCandidate[] {
+  if (updatedAfter === undefined) {
+    return [...candidates];
+  }
+
+  const updatedAfterSortKey = normalizeRfc3339SortKey(updatedAfter);
+
+  return candidates.filter(
+    (candidate) =>
+      compareRfc3339SortKeys(candidate.sortKey, updatedAfterSortKey) > 0,
+  );
+}
+
+function applyCursorFilter(
+  candidates: readonly ProjectionIssueListCandidate[],
+  cursor: string | undefined,
+): ProjectionIssueListCandidate[] {
+  if (cursor === undefined) {
+    return [...candidates];
+  }
+
+  const decodedCursor = decodeIssueListCursor(cursor);
+
+  return candidates.filter((candidate) =>
+    isCandidateAfterCursor(candidate, decodedCursor),
+  );
+}
+
 function getNextCursor(
-  rows: readonly ProjectedIssueListRow[],
+  candidates: readonly ProjectionIssueListCandidate[],
   limit: number,
 ): string | null {
-  if (rows.length <= limit) {
+  if (candidates.length <= limit) {
     return null;
   }
 
-  const lastRow = rows[limit - 1];
+  const lastCandidate = candidates[limit - 1];
 
-  if (lastRow === undefined) {
+  if (lastCandidate === undefined) {
     return null;
   }
 
   return encodeIssueListCursor({
-    effectiveUpdatedAt: lastRow.effective_updated_at,
-    issueId: lastRow.issue_id,
+    utcSecond: lastCandidate.sortKey.utcSecond,
+    fractionalDigits: lastCandidate.sortKey.fractionalDigits,
+    issueId: lastCandidate.issueId,
   });
 }
 
-function getIssueIds(rows: readonly ProjectedIssueListRow[]): string[] {
-  return rows.map((row) => row.issue_id);
+function getIssueIds(
+  candidates: readonly ProjectionIssueListCandidate[],
+): string[] {
+  return candidates.map((candidate) => candidate.issueId);
 }
 
 export function readIssueListPage(
@@ -235,10 +276,14 @@ export function readIssueListPage(
   const rows = database
     .query<ProjectedIssueListRow, SqlParameter[]>(builtQuery.sql)
     .all(...builtQuery.parameters);
-  const selectedRows = rows.slice(0, query.limit);
+  const candidates = applyCursorFilter(
+    applyUpdatedAfterFilter(rows.map(buildCandidate), query.updatedAfter),
+    query.cursor,
+  ).sort(compareCandidatesForPageOrder);
+  const selectedCandidates = candidates.slice(0, query.limit);
 
   return {
-    issueIds: getIssueIds(selectedRows),
-    nextCursor: getNextCursor(rows, query.limit),
+    issueIds: getIssueIds(selectedCandidates),
+    nextCursor: getNextCursor(candidates, query.limit),
   };
 }
