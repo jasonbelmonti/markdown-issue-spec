@@ -248,6 +248,45 @@ test("listIssueEnvelopes uses an opaque cursor that resumes without duplicates a
   }
 });
 
+test("listIssueEnvelopes rejects malformed cursor payloads", () => {
+  const database = openMemoryProjectionDatabase();
+
+  try {
+    indexEnvelopes(database, [
+      createEnvelope(
+        createIssue({
+          id: "ISSUE-2050",
+          title: "Cursor repro issue",
+          updatedAt: "2026-04-19T15:00:00-05:00",
+        }),
+      ),
+    ]);
+
+    const malformedCursor = Buffer.from(
+      JSON.stringify({
+        v: 2,
+        utcSecond: "A",
+        fractionalDigits: "not-digits",
+        issueId: "ISSUE-9999",
+      }),
+      "utf8",
+    )
+      .toString("base64")
+      .replaceAll("+", "-")
+      .replaceAll("/", "_")
+      .replace(/=+$/u, "");
+
+    expect(() =>
+      listIssueEnvelopes(database, {
+        limit: 10,
+        cursor: malformedCursor,
+      })
+    ).toThrow("Issue list cursor is invalid.");
+  } finally {
+    database.close();
+  }
+});
+
 test("listIssueEnvelopes applies updatedAfter using the effective timestamp when updated_at is absent", () => {
   const database = openMemoryProjectionDatabase();
 
