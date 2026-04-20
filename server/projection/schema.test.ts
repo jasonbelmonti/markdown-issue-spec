@@ -14,9 +14,10 @@ type ProjectionDatabase = ReturnType<typeof openProjectionDatabase>;
 
 const EXPECTED_SCHEMA_OBJECTS: Array<{ name: string; type: string }> = [
   { name: "assignees_assignee_issue_id_idx", type: "index" },
-  { name: "issues_kind_updated_at_idx", type: "index" },
-  { name: "issues_ready_updated_at_idx", type: "index" },
-  { name: "issues_status_updated_at_idx", type: "index" },
+  { name: "issues_effective_updated_at_sort_idx", type: "index" },
+  { name: "issues_kind_effective_updated_at_sort_idx", type: "index" },
+  { name: "issues_ready_effective_updated_at_sort_idx", type: "index" },
+  { name: "issues_status_effective_updated_at_sort_idx", type: "index" },
   { name: "labels_label_issue_id_idx", type: "index" },
   { name: "links_rel_target_issue_id_idx", type: "index" },
   { name: "validation_errors_issue_id_idx", type: "index" },
@@ -177,6 +178,47 @@ test("applyProjectionSchema adds issue presence columns for older projection dat
         extensions_json TEXT
       )`,
     );
+    database
+      .query(
+        `INSERT INTO ${PROJECTION_TABLE_NAMES.issues} (
+          issue_id,
+          spec_version,
+          title,
+          kind,
+          status,
+          resolution,
+          summary,
+          body,
+          priority,
+          created_at,
+          updated_at,
+          revision,
+          file_path,
+          indexed_at,
+          ready,
+          is_blocked,
+          extensions_json
+        ) VALUES (
+          'ISSUE-legacy',
+          'mis/0.1',
+          'Legacy issue',
+          'task',
+          'accepted',
+          NULL,
+          NULL,
+          NULL,
+          NULL,
+          '2026-04-10T12:00:00.0004Z',
+          NULL,
+          'rev-legacy',
+          'vault/issues/ISSUE-legacy.md',
+          '2026-04-10T12:30:00Z',
+          1,
+          0,
+          NULL
+        )`,
+      )
+      .run();
 
     applyProjectionSchema(database);
 
@@ -198,10 +240,154 @@ test("applyProjectionSchema adds issue presence columns for older projection dat
       "ready",
       "is_blocked",
       "extensions_json",
+      "effective_updated_at_utc_second",
+      "effective_updated_at_fractional",
       "has_labels",
       "has_assignees",
       "has_links",
     ]);
+
+    expect(
+      database
+        .query<
+          {
+            effective_updated_at_utc_second: string;
+            effective_updated_at_fractional: string;
+          },
+          []
+        >(
+          `SELECT
+             effective_updated_at_utc_second,
+             effective_updated_at_fractional
+           FROM ${PROJECTION_TABLE_NAMES.issues}
+           WHERE issue_id = 'ISSUE-legacy'`,
+        )
+        .get(),
+    ).toEqual({
+      effective_updated_at_utc_second: "002026-04-10T12:00:00Z",
+      effective_updated_at_fractional: "0004",
+    });
+  } finally {
+    database.close();
+  }
+});
+
+test("applyProjectionSchema refreshes stored sort keys from earlier projection schema versions", () => {
+  const database = openMemoryProjectionDatabase();
+
+  try {
+    database.exec(
+      `CREATE TABLE ${PROJECTION_TABLE_NAMES.metadata} (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      )`,
+    );
+    database
+      .query(
+        `INSERT INTO ${PROJECTION_TABLE_NAMES.metadata} (key, value)
+         VALUES ('schema_version', '3')`,
+      )
+      .run();
+    database.exec(
+      `CREATE TABLE ${PROJECTION_TABLE_NAMES.issues} (
+        issue_id TEXT PRIMARY KEY,
+        spec_version TEXT NOT NULL,
+        title TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        status TEXT NOT NULL,
+        resolution TEXT,
+        summary TEXT,
+        body TEXT,
+        priority TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT,
+        effective_updated_at_utc_second TEXT NOT NULL DEFAULT '',
+        effective_updated_at_fractional TEXT NOT NULL DEFAULT '',
+        revision TEXT NOT NULL,
+        file_path TEXT NOT NULL UNIQUE,
+        indexed_at TEXT NOT NULL,
+        has_labels INTEGER NOT NULL DEFAULT 0,
+        has_assignees INTEGER NOT NULL DEFAULT 0,
+        has_links INTEGER NOT NULL DEFAULT 0,
+        ready INTEGER NOT NULL CHECK (ready IN (0, 1)),
+        is_blocked INTEGER NOT NULL CHECK (is_blocked IN (0, 1)),
+        extensions_json TEXT
+      )`,
+    );
+    database
+      .query(
+        `INSERT INTO ${PROJECTION_TABLE_NAMES.issues} (
+          issue_id,
+          spec_version,
+          title,
+          kind,
+          status,
+          resolution,
+          summary,
+          body,
+          priority,
+          created_at,
+          updated_at,
+          effective_updated_at_utc_second,
+          effective_updated_at_fractional,
+          revision,
+          file_path,
+          indexed_at,
+          has_labels,
+          has_assignees,
+          has_links,
+          ready,
+          is_blocked,
+          extensions_json
+        ) VALUES (
+          'ISSUE-v3',
+          'mis/0.1',
+          'Branch-era issue',
+          'task',
+          'accepted',
+          NULL,
+          NULL,
+          NULL,
+          NULL,
+          '2026-04-10T12:00:00.0004Z',
+          NULL,
+          '2026-04-10T12:00:00Z',
+          '0004',
+          'rev-v3',
+          'vault/issues/ISSUE-v3.md',
+          '2026-04-10T12:30:00Z',
+          0,
+          0,
+          0,
+          1,
+          0,
+          NULL
+        )`,
+      )
+      .run();
+
+    applyProjectionSchema(database);
+
+    expect(
+      database
+        .query<
+          {
+            effective_updated_at_utc_second: string;
+            effective_updated_at_fractional: string;
+          },
+          []
+        >(
+          `SELECT
+             effective_updated_at_utc_second,
+             effective_updated_at_fractional
+           FROM ${PROJECTION_TABLE_NAMES.issues}
+           WHERE issue_id = 'ISSUE-v3'`,
+        )
+        .get(),
+    ).toEqual({
+      effective_updated_at_utc_second: "002026-04-10T12:00:00Z",
+      effective_updated_at_fractional: "0004",
+    });
   } finally {
     database.close();
   }

@@ -10,6 +10,11 @@ export {
 export { indexIssueEnvelope } from "./index-issue.ts";
 export { readIssueEnvelope } from "./read-issue-envelope.ts";
 export {
+  listIssueEnvelopes,
+  type ListIssueEnvelopesPage,
+  type ListIssueEnvelopesQuery,
+} from "./list-issue-envelopes.ts";
+export {
   indexValidationErrors,
   type ValidationErrorIndexTarget,
 } from "./index-validation-errors.ts";

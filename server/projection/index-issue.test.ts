@@ -78,6 +78,8 @@ function getIssueRow(database: ProjectionDatabase) {
         summary: string | null;
         body: string | null;
         priority: string | null;
+        effective_updated_at_utc_second: string;
+        effective_updated_at_fractional: string;
         revision: string;
         file_path: string;
         indexed_at: string;
@@ -98,6 +100,8 @@ function getIssueRow(database: ProjectionDatabase) {
          summary,
          body,
          priority,
+         effective_updated_at_utc_second,
+         effective_updated_at_fractional,
          revision,
          file_path,
          indexed_at,
@@ -181,6 +185,8 @@ test("indexIssueEnvelope writes canonical issue, label, assignee, and link rows"
 Index one issue into SQLite.
 `,
       priority: "high",
+      effective_updated_at_utc_second: "002026-04-10T14:15:00Z",
+      effective_updated_at_fractional: "",
       revision: "rev-1",
       file_path: "vault/issues/ISSUE-0300.md",
       indexed_at: "2026-04-10T09:30:00-05:00",
@@ -282,6 +288,8 @@ test("indexIssueEnvelope replaces stale normalized rows when the same issue is r
 Index one issue into SQLite.
 `,
       priority: null,
+      effective_updated_at_utc_second: "002026-04-10T14:15:00Z",
+      effective_updated_at_fractional: "",
       revision: "rev-2",
       file_path: "vault/issues/ISSUE-0300.md",
       indexed_at: "2026-04-10T10:00:00-05:00",
