@@ -81,6 +81,9 @@ function getIssueRow(database: ProjectionDatabase) {
         revision: string;
         file_path: string;
         indexed_at: string;
+        has_labels: number;
+        has_assignees: number;
+        has_links: number;
         ready: number;
         is_blocked: number;
         extensions_json: string | null;
@@ -98,6 +101,9 @@ function getIssueRow(database: ProjectionDatabase) {
          revision,
          file_path,
          indexed_at,
+         has_labels,
+         has_assignees,
+         has_links,
          ready,
          is_blocked,
          extensions_json
@@ -178,6 +184,9 @@ Index one issue into SQLite.
       revision: "rev-1",
       file_path: "vault/issues/ISSUE-0300.md",
       indexed_at: "2026-04-10T09:30:00-05:00",
+      has_labels: 1,
+      has_assignees: 1,
+      has_links: 1,
       ready: 0,
       is_blocked: 1,
       extensions_json: "{\"acme/source\":\"test\"}",
@@ -276,6 +285,9 @@ Index one issue into SQLite.
       revision: "rev-2",
       file_path: "vault/issues/ISSUE-0300.md",
       indexed_at: "2026-04-10T10:00:00-05:00",
+      has_labels: 1,
+      has_assignees: 0,
+      has_links: 1,
       ready: 1,
       is_blocked: 0,
       extensions_json: "{\"acme/source\":\"updated\"}",

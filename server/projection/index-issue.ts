@@ -28,11 +28,14 @@ function upsertIssueRow(database: Database, envelope: IssueEnvelope): void {
          revision,
          file_path,
          indexed_at,
+         has_labels,
+         has_assignees,
+         has_links,
          ready,
          is_blocked,
          extensions_json
        ) VALUES (
-         ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17
+         ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20
        )
        ON CONFLICT(issue_id) DO UPDATE SET
          spec_version = excluded.spec_version,
@@ -48,6 +51,9 @@ function upsertIssueRow(database: Database, envelope: IssueEnvelope): void {
          revision = excluded.revision,
          file_path = excluded.file_path,
          indexed_at = excluded.indexed_at,
+         has_labels = excluded.has_labels,
+         has_assignees = excluded.has_assignees,
+         has_links = excluded.has_links,
          ready = excluded.ready,
          is_blocked = excluded.is_blocked,
          extensions_json = excluded.extensions_json`,
@@ -67,6 +73,9 @@ function upsertIssueRow(database: Database, envelope: IssueEnvelope): void {
       revision,
       source.file_path,
       source.indexed_at,
+      booleanToInteger(issue.labels !== undefined),
+      booleanToInteger(issue.assignees !== undefined),
+      booleanToInteger(issue.links !== undefined),
       booleanToInteger(derived.ready),
       booleanToInteger(derived.is_blocked),
       serializeProjectionJson(issue.extensions),

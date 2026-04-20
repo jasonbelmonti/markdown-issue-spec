@@ -1,35 +1,20 @@
 import type {
-  DependencyIssueLink,
   DerivedIssueFields,
   Issue,
   IssueEnvelope,
   IssueLink,
   IssueSource,
   IssueRevision,
-  NonTerminalIssueStatus,
 } from "../core/types/index.ts";
+import {
+  getRelevantDependencyIdsForNextTransition,
+  getUnsatisfiedDependencyIds,
+} from "../core/dependency-readiness.ts";
 
 export interface ParsedStartupIssueFile {
   issue: Issue;
   revision: IssueRevision;
   source: IssueSource;
-}
-
-function isSatisfiedDependencyTarget(issue: Issue | undefined): boolean {
-  return issue?.status === "completed" && issue.resolution === "done";
-}
-
-function getLinkTargetIds(
-  issue: Issue,
-  relation: IssueLink["rel"],
-): string[] {
-  return Array.from(
-    new Set(
-      (issue.links ?? [])
-        .filter((link) => link.rel === relation)
-        .map((link) => link.target.id),
-    ),
-  );
 }
 
 function getIncomingRelationIds(
@@ -50,66 +35,16 @@ function getIncomingRelationIds(
   );
 }
 
-function isDependencyLink(link: IssueLink): link is DependencyIssueLink {
-  return link.rel === "depends_on";
-}
-
-function shouldEvaluateDependencyForTransition(
-  issueStatus: NonTerminalIssueStatus,
-  link: DependencyIssueLink,
-  nextStatus: "in_progress" | "completed",
-): boolean {
-  if (nextStatus === "in_progress") {
-    return link.required_before === "in_progress";
-  }
-
-  if (link.required_before === "completed") {
-    return true;
-  }
-
-  return issueStatus !== "in_progress";
-}
-
-function getBlockingDependencyIds(
-  issue: Issue,
-  issuesById: ReadonlyMap<string, Issue>,
-): string[] {
-  const issueStatus = issue.status;
-
-  if (issueStatus === "completed" || issueStatus === "canceled") {
-    return [];
-  }
-
-  const blockingTransitionStatus =
-    issueStatus === "in_progress" ? "completed" : "in_progress";
-
-  return Array.from(
-    new Set(
-      (issue.links ?? [])
-        .filter(isDependencyLink)
-        .filter((link) =>
-          shouldEvaluateDependencyForTransition(
-            issueStatus,
-            link,
-            blockingTransitionStatus,
-          ),
-        )
-        .map((link) => link.target.id)
-        .filter(
-          (dependencyIssueId) =>
-            !isSatisfiedDependencyTarget(issuesById.get(dependencyIssueId)),
-        ),
-    ),
-  );
-}
-
 function deriveStartupFields(
   parsedIssue: ParsedStartupIssueFile,
   parsedIssues: readonly ParsedStartupIssueFile[],
   issuesById: ReadonlyMap<string, Issue>,
 ): DerivedIssueFields {
   const { issue } = parsedIssue;
-  const blockedByIds = getBlockingDependencyIds(issue, issuesById);
+  const blockedByIds = getUnsatisfiedDependencyIds(
+    getRelevantDependencyIdsForNextTransition(issue),
+    (dependencyIssueId) => issuesById.get(dependencyIssueId),
+  );
 
   return {
     children_ids: getIncomingRelationIds(parsedIssues, issue.id, "parent"),
