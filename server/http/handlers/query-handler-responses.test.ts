@@ -19,7 +19,7 @@ test("createQueryValidationErrorResponse returns deterministic invalid-query jso
     ],
   });
 
-  expect(response.status).toBe(422);
+  expect(response.status).toBe(400);
   expect(await response.json()).toEqual({
     error: {
       code: "issue_list_validation_failed",
