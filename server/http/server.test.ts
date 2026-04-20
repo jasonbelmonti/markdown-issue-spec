@@ -19,6 +19,7 @@ import { createCreateIssueHandler } from "./handlers/create-issue-handler.ts";
 import { defaultQueryHandlers } from "./handlers/default-query-handlers.ts";
 import { createGetIssueHandler } from "./handlers/get-issue-handler.ts";
 import { createGetIssueListHandler } from "./handlers/get-issue-list-handler.ts";
+import { MAX_ISSUE_LIST_LIMIT } from "./handlers/list-issues-query-params.ts";
 import { createPatchIssueHandler } from "./handlers/patch-issue-handler.ts";
 import type { QueryRouteHandlers } from "./handlers/types.ts";
 import { startServer } from "./server.ts";
@@ -349,6 +350,7 @@ test("startServer serves GET /issues and GET /issues/:id from SQLite while GET /
       );
       const invalidQueryResponses = await Promise.all([
         fetch(`${baseUrl}/issues?limit=0`),
+        fetch(`${baseUrl}/issues?limit=${MAX_ISSUE_LIST_LIMIT + 1}`),
         fetch(`${baseUrl}/issues?ready=maybe`),
         fetch(`${baseUrl}/issues?status=accepted&status=completed`),
         fetch(`${baseUrl}/issues?cursor=bad!`),
@@ -386,7 +388,7 @@ test("startServer serves GET /issues and GET /issues/:id from SQLite while GET /
         items: [],
       });
 
-      expect(invalidQueryResponses).toHaveLength(4);
+      expect(invalidQueryResponses).toHaveLength(5);
       expect(invalidQueryResponses[0]?.status).toBe(400);
       expect(await invalidQueryResponses[0]?.json()).toEqual({
         error: {
@@ -398,9 +400,11 @@ test("startServer serves GET /issues and GET /issues/:id from SQLite while GET /
                 code: "query.invalid_limit",
                 source: "request",
                 path: "/limit",
-                message: "Query parameter `limit` must be a positive integer.",
+                message:
+                  `Query parameter \`limit\` must be a positive integer not exceeding ${MAX_ISSUE_LIST_LIMIT}.`,
                 details: {
                   limit: "0",
+                  maxLimit: MAX_ISSUE_LIST_LIMIT,
                 },
               },
             ],
@@ -410,6 +414,29 @@ test("startServer serves GET /issues and GET /issues/:id from SQLite while GET /
 
       expect(invalidQueryResponses[1]?.status).toBe(400);
       expect(await invalidQueryResponses[1]?.json()).toEqual({
+        error: {
+          code: "issue_list_validation_failed",
+          message: "Issue list validation failed.",
+          details: {
+            errors: [
+              {
+                code: "query.invalid_limit",
+                source: "request",
+                path: "/limit",
+                message:
+                  `Query parameter \`limit\` must be a positive integer not exceeding ${MAX_ISSUE_LIST_LIMIT}.`,
+                details: {
+                  limit: String(MAX_ISSUE_LIST_LIMIT + 1),
+                  maxLimit: MAX_ISSUE_LIST_LIMIT,
+                },
+              },
+            ],
+          },
+        },
+      });
+
+      expect(invalidQueryResponses[2]?.status).toBe(400);
+      expect(await invalidQueryResponses[2]?.json()).toEqual({
         error: {
           code: "issue_list_validation_failed",
           message: "Issue list validation failed.",
@@ -429,8 +456,8 @@ test("startServer serves GET /issues and GET /issues/:id from SQLite while GET /
         },
       });
 
-      expect(invalidQueryResponses[2]?.status).toBe(400);
-      expect(await invalidQueryResponses[2]?.json()).toEqual({
+      expect(invalidQueryResponses[3]?.status).toBe(400);
+      expect(await invalidQueryResponses[3]?.json()).toEqual({
         error: {
           code: "issue_list_validation_failed",
           message: "Issue list validation failed.",
@@ -450,8 +477,8 @@ test("startServer serves GET /issues and GET /issues/:id from SQLite while GET /
         },
       });
 
-      expect(invalidQueryResponses[3]?.status).toBe(400);
-      expect(await invalidQueryResponses[3]?.json()).toEqual({
+      expect(invalidQueryResponses[4]?.status).toBe(400);
+      expect(await invalidQueryResponses[4]?.json()).toEqual({
         error: {
           code: "issue_list_validation_failed",
           message: "Issue list validation failed.",

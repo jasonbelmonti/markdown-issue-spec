@@ -39,6 +39,7 @@ const ISSUE_LIST_QUERY_PARAMETER_NAME_SET = new Set<string>(
 );
 
 export const DEFAULT_ISSUE_LIST_LIMIT = 50;
+export const MAX_ISSUE_LIST_LIMIT = 100;
 
 export class IssueListQueryValidationError extends Error {
   readonly errors: readonly QueryRequestValidationError[];
@@ -128,9 +129,11 @@ function createInvalidLimitValidationError(
   return createIssueListQueryRequestValidationError({
     code: "query.invalid_limit",
     path: "/limit",
-    message: "Query parameter `limit` must be a positive integer.",
+    message:
+      `Query parameter \`limit\` must be a positive integer not exceeding ${MAX_ISSUE_LIST_LIMIT}.`,
     details: {
       limit,
+      maxLimit: MAX_ISSUE_LIST_LIMIT,
     },
   });
 }
@@ -251,7 +254,11 @@ function parseLimit(
 
   const parsedLimit = Number.parseInt(value, 10);
 
-  if (!Number.isSafeInteger(parsedLimit) || parsedLimit < 1) {
+  if (
+    !Number.isSafeInteger(parsedLimit)
+    || parsedLimit < 1
+    || parsedLimit > MAX_ISSUE_LIST_LIMIT
+  ) {
     errors.push(createInvalidLimitValidationError(value));
 
     return DEFAULT_ISSUE_LIST_LIMIT;

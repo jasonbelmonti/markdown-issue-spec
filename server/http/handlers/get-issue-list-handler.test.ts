@@ -2,7 +2,10 @@ import { expect, test } from "bun:test";
 
 import type { IssueEnvelope } from "../../core/types/index.ts";
 import { createGetIssueListHandler } from "./get-issue-list-handler.ts";
-import { DEFAULT_ISSUE_LIST_LIMIT } from "./list-issues-query-params.ts";
+import {
+  DEFAULT_ISSUE_LIST_LIMIT,
+  MAX_ISSUE_LIST_LIMIT,
+} from "./list-issues-query-params.ts";
 
 const PROJECTED_LIST_ITEM: IssueEnvelope = {
   issue: {
@@ -122,9 +125,56 @@ test("createGetIssueListHandler returns deterministic 400 validation errors befo
             code: "query.invalid_limit",
             source: "request",
             path: "/limit",
-            message: "Query parameter `limit` must be a positive integer.",
+            message:
+              `Query parameter \`limit\` must be a positive integer not exceeding ${MAX_ISSUE_LIST_LIMIT}.`,
             details: {
               limit: "0",
+              maxLimit: MAX_ISSUE_LIST_LIMIT,
+            },
+          },
+        ],
+      },
+    },
+  });
+});
+
+test("createGetIssueListHandler rejects limits above the maximum page size", async () => {
+  let wasReaderCalled = false;
+  const handler = createGetIssueListHandler(() => {
+    wasReaderCalled = true;
+
+    return {
+      items: [],
+      nextCursor: null,
+    };
+  });
+
+  const response = await handler(
+    new Request(
+      `http://localhost/issues?limit=${MAX_ISSUE_LIST_LIMIT + 1}`,
+      {
+        method: "GET",
+      },
+    ),
+  );
+
+  expect(wasReaderCalled).toBe(false);
+  expect(response.status).toBe(400);
+  expect(await response.json()).toEqual({
+    error: {
+      code: "issue_list_validation_failed",
+      message: "Issue list validation failed.",
+      details: {
+        errors: [
+          {
+            code: "query.invalid_limit",
+            source: "request",
+            path: "/limit",
+            message:
+              `Query parameter \`limit\` must be a positive integer not exceeding ${MAX_ISSUE_LIST_LIMIT}.`,
+            details: {
+              limit: String(MAX_ISSUE_LIST_LIMIT + 1),
+              maxLimit: MAX_ISSUE_LIST_LIMIT,
             },
           },
         ],

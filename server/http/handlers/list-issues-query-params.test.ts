@@ -4,6 +4,7 @@ import { encodeIssueListCursor } from "../../projection/issue-list-cursor.ts";
 import {
   DEFAULT_ISSUE_LIST_LIMIT,
   IssueListQueryValidationError,
+  MAX_ISSUE_LIST_LIMIT,
   parseListIssuesQuery,
 } from "./list-issues-query-params.ts";
 
@@ -44,6 +45,37 @@ test("parseListIssuesQuery defaults limit when it is omitted", () => {
   expect(parseListIssuesQuery(createIssuesRequest())).toEqual({
     limit: DEFAULT_ISSUE_LIST_LIMIT,
   });
+});
+
+test("parseListIssuesQuery rejects limits above the maximum page size", () => {
+  const request = createIssuesRequest(
+    `/issues?limit=${MAX_ISSUE_LIST_LIMIT + 1}`,
+  );
+
+  try {
+    parseListIssuesQuery(request);
+    throw new Error("Expected query validation to fail.");
+  } catch (error) {
+    expect(error).toBeInstanceOf(IssueListQueryValidationError);
+
+    if (!(error instanceof IssueListQueryValidationError)) {
+      return;
+    }
+
+    expect(error.errors).toEqual([
+      {
+        code: "query.invalid_limit",
+        source: "request",
+        path: "/limit",
+        message:
+          `Query parameter \`limit\` must be a positive integer not exceeding ${MAX_ISSUE_LIST_LIMIT}.`,
+        details: {
+          limit: String(MAX_ISSUE_LIST_LIMIT + 1),
+          maxLimit: MAX_ISSUE_LIST_LIMIT,
+        },
+      },
+    ]);
+  }
 });
 
 test("parseListIssuesQuery rejects invalid and repeated query parameters deterministically", () => {
@@ -107,9 +139,11 @@ test("parseListIssuesQuery rejects invalid and repeated query parameters determi
         code: "query.invalid_limit",
         source: "request",
         path: "/limit",
-        message: "Query parameter `limit` must be a positive integer.",
+        message:
+          `Query parameter \`limit\` must be a positive integer not exceeding ${MAX_ISSUE_LIST_LIMIT}.`,
         details: {
           limit: "0",
+          maxLimit: MAX_ISSUE_LIST_LIMIT,
         },
       },
       {

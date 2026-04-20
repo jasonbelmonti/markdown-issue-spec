@@ -11,9 +11,11 @@ test("createQueryValidationErrorResponse returns deterministic invalid-query jso
         code: "query.invalid_limit",
         source: "request",
         path: "/limit",
-        message: "Query parameter `limit` must be a positive integer.",
+        message:
+          "Query parameter `limit` must be a positive integer not exceeding 100.",
         details: {
           limit: "zero",
+          maxLimit: 100,
         },
       },
     ],
@@ -30,9 +32,11 @@ test("createQueryValidationErrorResponse returns deterministic invalid-query jso
             code: "query.invalid_limit",
             source: "request",
             path: "/limit",
-            message: "Query parameter `limit` must be a positive integer.",
+            message:
+              "Query parameter `limit` must be a positive integer not exceeding 100.",
             details: {
               limit: "zero",
+              maxLimit: 100,
             },
           },
         ],
