@@ -185,7 +185,7 @@ test("indexIssueEnvelope writes canonical issue, label, assignee, and link rows"
 Index one issue into SQLite.
 `,
       priority: "high",
-      effective_updated_at_utc_second: "2026-04-10T14:15:00Z",
+      effective_updated_at_utc_second: "002026-04-10T14:15:00Z",
       effective_updated_at_fractional: "",
       revision: "rev-1",
       file_path: "vault/issues/ISSUE-0300.md",
@@ -288,7 +288,7 @@ test("indexIssueEnvelope replaces stale normalized rows when the same issue is r
 Index one issue into SQLite.
 `,
       priority: null,
-      effective_updated_at_utc_second: "2026-04-10T14:15:00Z",
+      effective_updated_at_utc_second: "002026-04-10T14:15:00Z",
       effective_updated_at_fractional: "",
       revision: "rev-2",
       file_path: "vault/issues/ISSUE-0300.md",

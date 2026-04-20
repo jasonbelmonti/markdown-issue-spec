@@ -10,6 +10,7 @@ interface ParsedRfc3339Timestamp {
 
 const RFC3339_TIMESTAMP_PATTERN =
   /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(Z|([+-])(\d{2}):(\d{2}))$/i;
+const SORTABLE_UTC_YEAR_WIDTH = 6;
 
 function createInvalidRfc3339TimestampError(timestamp: string): Error {
   return new Error(`RFC3339 timestamp "${timestamp}" is invalid.`);
@@ -50,10 +51,6 @@ function assertRfc3339DateTimeFields(
   minute: number,
   second: number,
 ): void {
-  if (year < 100) {
-    throw createInvalidRfc3339TimestampError(timestamp);
-  }
-
   if (month < 1 || month > 12) {
     throw createInvalidRfc3339TimestampError(timestamp);
   }
@@ -110,10 +107,51 @@ function normalizeFractionalDigits(fractionalDigits: string | undefined): string
   return fractionalDigits.replace(/0+$/u, "");
 }
 
-function formatUtcSecond(utcMillisecond: number): string {
-  const isoTimestamp = new Date(utcMillisecond).toISOString();
+function padNumber(value: number, width: number): string {
+  return String(value).padStart(width, "0");
+}
 
-  return `${isoTimestamp.slice(0, 19)}Z`;
+function formatSortableUtcYear(year: number): string {
+  if (year < 0) {
+    return `-${padNumber(Math.abs(year), SORTABLE_UTC_YEAR_WIDTH)}`;
+  }
+
+  return padNumber(year, SORTABLE_UTC_YEAR_WIDTH);
+}
+
+function buildUtcDate(
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+  second: number,
+): Date {
+  const date = new Date(0);
+
+  date.setUTCHours(hour, minute, second, 0);
+  date.setUTCFullYear(year, month - 1, day);
+
+  return date;
+}
+
+function formatUtcSecond(utcMillisecond: number): string {
+  const utcDate = new Date(utcMillisecond);
+
+  return [
+    formatSortableUtcYear(utcDate.getUTCFullYear()),
+    "-",
+    padNumber(utcDate.getUTCMonth() + 1, 2),
+    "-",
+    padNumber(utcDate.getUTCDate(), 2),
+    "T",
+    padNumber(utcDate.getUTCHours(), 2),
+    ":",
+    padNumber(utcDate.getUTCMinutes(), 2),
+    ":",
+    padNumber(utcDate.getUTCSeconds(), 2),
+    "Z",
+  ].join("");
 }
 
 function getOffsetMinutes(
@@ -187,14 +225,14 @@ function parseRfc3339Timestamp(timestamp: string): ParsedRfc3339Timestamp {
   );
 
   const utcMillisecond =
-    Date.UTC(
+    buildUtcDate(
       parsedYear,
-      parsedMonth - 1,
+      parsedMonth,
       parsedDay,
       parsedHour,
       parsedMinute,
       parsedSecond,
-    )
+    ).getTime()
     - getOffsetMinutes(
       timestamp,
       zoneDesignator,

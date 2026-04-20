@@ -2,7 +2,7 @@ import type { Database } from "bun:sqlite";
 
 import { normalizeRfc3339SortKey } from "./rfc3339-sort-key.ts";
 
-export const PROJECTION_SCHEMA_VERSION = 3;
+export const PROJECTION_SCHEMA_VERSION = 4;
 const PROJECTION_SCHEMA_VERSION_KEY = "schema_version";
 
 export const PROJECTION_TABLE_NAMES = {
@@ -179,6 +179,24 @@ function setProjectionSchemaVersion(database: Database): void {
     .run(PROJECTION_SCHEMA_VERSION_KEY, String(PROJECTION_SCHEMA_VERSION));
 }
 
+function getProjectionSchemaVersion(database: Database): number | null {
+  const row = database
+    .query<{ value: string }, [string]>(
+      `SELECT value
+       FROM ${PROJECTION_TABLE_NAMES.metadata}
+       WHERE key = ?1`,
+    )
+    .get(PROJECTION_SCHEMA_VERSION_KEY);
+
+  if (row === null || row === undefined) {
+    return null;
+  }
+
+  const parsedVersion = Number.parseInt(row.value, 10);
+
+  return Number.isInteger(parsedVersion) ? parsedVersion : null;
+}
+
 function listIssuesTableColumns(database: Database): Set<string> {
   return new Set(
     database
@@ -205,8 +223,9 @@ function ensureIssuePresenceColumns(database: Database): void {
   }
 }
 
-function ensureIssueSortKeyColumns(database: Database): void {
+function ensureIssueSortKeyColumns(database: Database): boolean {
   const existingColumns = listIssuesTableColumns(database);
+  let addedColumn = false;
 
   for (const columnName of ISSUE_SORT_KEY_COLUMNS) {
     if (existingColumns.has(columnName)) {
@@ -217,15 +236,21 @@ function ensureIssueSortKeyColumns(database: Database): void {
       `ALTER TABLE ${PROJECTION_TABLE_NAMES.issues}
        ADD COLUMN ${getIssueSortKeyColumnDefinition(columnName)}`,
     );
+    addedColumn = true;
   }
+
+  return addedColumn;
 }
 
-function backfillIssueSortKeyColumns(database: Database): void {
+function backfillIssueSortKeyColumns(
+  database: Database,
+  forceRefresh = false,
+): void {
   const rows = database
     .query<IssueSortKeyBackfillRow, []>(
       `SELECT issue_id, created_at, updated_at
        FROM ${PROJECTION_TABLE_NAMES.issues}
-       WHERE effective_updated_at_utc_second = ''`,
+       ${forceRefresh ? "" : "WHERE effective_updated_at_utc_second = ''"}`,
     )
     .all();
 
@@ -256,9 +281,15 @@ export function applyProjectionSchema(database: Database): void {
     database.exec(statement);
   }
 
-  ensureIssueSortKeyColumns(database);
+  const previousSchemaVersion = getProjectionSchemaVersion(database);
+  const addedSortKeyColumns = ensureIssueSortKeyColumns(database);
   ensureIssuePresenceColumns(database);
-  backfillIssueSortKeyColumns(database);
+  backfillIssueSortKeyColumns(
+    database,
+    addedSortKeyColumns
+      || previousSchemaVersion === null
+      || previousSchemaVersion < PROJECTION_SCHEMA_VERSION,
+  );
 
   for (const statement of CREATE_INDEX_STATEMENTS) {
     database.exec(statement);

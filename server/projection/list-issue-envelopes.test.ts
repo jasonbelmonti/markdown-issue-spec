@@ -379,6 +379,70 @@ test("listIssueEnvelopes resumes pagination correctly across mixed-offset timest
   }
 });
 
+test("listIssueEnvelopes accepts schema-valid years below 0100", () => {
+  const database = openMemoryProjectionDatabase();
+
+  try {
+    indexEnvelopes(database, [
+      createEnvelope(
+        createIssue({
+          id: "ISSUE-2350",
+          title: "Earlier century issue",
+          createdAt: "0099-04-19T22:30:00Z",
+        }),
+      ),
+      createEnvelope(
+        createIssue({
+          id: "ISSUE-2351",
+          title: "Later century issue",
+          createdAt: "0100-04-19T22:30:00Z",
+        }),
+      ),
+    ]);
+
+    expect(listIssueIds(database, { limit: 10 })).toEqual([
+      "ISSUE-2351",
+      "ISSUE-2350",
+    ]);
+  } finally {
+    database.close();
+  }
+});
+
+test("listIssueEnvelopes preserves ordering across UTC year rollover after offset normalization", () => {
+  const database = openMemoryProjectionDatabase();
+
+  try {
+    indexEnvelopes(database, [
+      createEnvelope(
+        createIssue({
+          id: "ISSUE-2360",
+          title: "Earlier extended-year instant",
+          createdAt: "9999-12-31T23:59:58-23:59",
+        }),
+      ),
+      createEnvelope(
+        createIssue({
+          id: "ISSUE-2361",
+          title: "Later extended-year instant",
+          createdAt: "9999-12-31T23:59:59-23:59",
+        }),
+      ),
+    ]);
+
+    expect(listIssueIds(database, { limit: 10 })).toEqual([
+      "ISSUE-2361",
+      "ISSUE-2360",
+    ]);
+    expect(listIssueIds(database, {
+      limit: 10,
+      updatedAfter: "9999-12-31T23:59:58-23:59",
+    })).toEqual(["ISSUE-2361"]);
+  } finally {
+    database.close();
+  }
+});
+
 test("listIssueEnvelopes preserves sub-millisecond precision for ordering and updatedAfter", () => {
   const database = openMemoryProjectionDatabase();
 
