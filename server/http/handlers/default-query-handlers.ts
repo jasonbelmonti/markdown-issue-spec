@@ -1,11 +1,9 @@
+import { handleGetIssue } from "./get-issue-handler.ts";
 import { createNotImplementedHandler } from "./not-implemented.ts";
 import type { QueryRouteHandlers } from "./types.ts";
 
 export const defaultQueryHandlers: QueryRouteHandlers = {
-  getIssue: createNotImplementedHandler({
-    code: "issue_get_not_implemented",
-    endpoint: "GET /issues/:id",
-  }),
+  getIssue: handleGetIssue,
   listIssues: createNotImplementedHandler({
     code: "issue_list_not_implemented",
     endpoint: "GET /issues",

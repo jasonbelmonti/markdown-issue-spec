@@ -7,10 +7,18 @@ import { createFilesystemCreateIssueMutationBoundary } from "../application/muta
 import { createFilesystemIssueMutationLock } from "../application/mutations/filesystem-issue-mutation-lock.ts";
 import { createFilesystemPatchIssueMutationBoundary } from "../application/mutations/filesystem-patch-issue-mutation-boundary.ts";
 import type { Issue, IssueEnvelope } from "../core/types/index.ts";
+import {
+  indexIssueEnvelope,
+  openProjectionDatabase,
+  readIssueEnvelope,
+} from "../projection/index.ts";
 import { FilesystemIssueStore } from "../store/index.ts";
 import { computeIssueRevision } from "../store/issue-revision.ts";
 import { createCreateIssueHandler } from "./handlers/create-issue-handler.ts";
+import { defaultQueryHandlers } from "./handlers/default-query-handlers.ts";
+import { createGetIssueHandler } from "./handlers/get-issue-handler.ts";
 import { createPatchIssueHandler } from "./handlers/patch-issue-handler.ts";
+import type { QueryRouteHandlers } from "./handlers/types.ts";
 import { startServer } from "./server.ts";
 
 const CREATE_TIMESTAMP = "2026-04-16T20:59:00-05:00";
@@ -38,6 +46,34 @@ const EXISTING_ISSUE: Issue = {
   body: "## Objective\n\nPatch this issue over HTTP.\n",
 };
 
+const PROJECTED_ISSUE_ENVELOPE: IssueEnvelope = {
+  issue: {
+    spec_version: "mis/0.1",
+    id: "ISSUE-7777",
+    title: "Serve one issue from the SQLite projection",
+    kind: "task",
+    status: "accepted",
+    created_at: "2026-04-19T10:00:00-05:00",
+    updated_at: "2026-04-19T10:15:00-05:00",
+    summary: "The HTTP route should not need canonical Markdown.",
+    labels: ["api", "projection"],
+    body: "## Objective\n\nRead one issue from SQLite.\n",
+  },
+  derived: {
+    children_ids: [],
+    blocks_ids: [],
+    blocked_by_ids: [],
+    duplicates_ids: [],
+    ready: true,
+    is_blocked: false,
+  },
+  revision: "rev-projected-issue",
+  source: {
+    file_path: "vault/issues/ISSUE-7777.md",
+    indexed_at: "2026-04-19T10:20:00-05:00",
+  },
+};
+
 async function createTemporaryRootDirectory(): Promise<string> {
   return mkdtemp(join(tmpdir(), "markdown-issue-server-"));
 }
@@ -45,6 +81,9 @@ async function createTemporaryRootDirectory(): Promise<string> {
 async function withServer<T>(
   rootDirectory: string,
   run: (baseUrl: string) => Promise<T>,
+  options: {
+    queryHandlers?: QueryRouteHandlers;
+  } = {},
 ): Promise<T> {
   const server = startServer({
     port: 0,
@@ -64,6 +103,7 @@ async function withServer<T>(
       ),
       transitionIssue: () => new Response("unused", { status: 500 }),
     },
+    queryHandlers: options.queryHandlers,
   });
 
   try {
@@ -193,58 +233,67 @@ test("startServer serves real create and patch outcomes", async () => {
   });
 });
 
-test("startServer wires placeholder query routes alongside live mutation routes", async () => {
+test("startServer serves GET /issues/:id from SQLite while other query routes stay on placeholders", async () => {
   const rootDirectory = await createTemporaryRootDirectory();
-  const store = new FilesystemIssueStore({ rootDirectory });
+  const database = openProjectionDatabase(join(rootDirectory, ".mis", "index.sqlite"));
+  const queryHandlers: QueryRouteHandlers = {
+    ...defaultQueryHandlers,
+    getIssue: createGetIssueHandler((issueId) => readIssueEnvelope(database, issueId)),
+  };
 
-  await store.writeIssue(EXISTING_ISSUE);
+  try {
+    indexIssueEnvelope(database, PROJECTED_ISSUE_ENVELOPE);
 
-  await withServer(rootDirectory, async (baseUrl) => {
-    const notImplementedQueryExpectations = [
-      {
-        pathname: `/issues/${EXISTING_ISSUE.id}`,
-        code: "issue_get_not_implemented",
-        endpoint: "GET /issues/:id",
-      },
-      {
-        pathname: "/issues",
-        code: "issue_list_not_implemented",
-        endpoint: "GET /issues",
-      },
-      {
-        pathname: "/validation/errors",
-        code: "validation_error_list_not_implemented",
-        endpoint: "GET /validation/errors",
-      },
-    ] as const;
-    const createResponse = await fetch(`${baseUrl}/issues`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-      },
-      body: JSON.stringify(CREATE_ISSUE_REQUEST_BODY),
-    });
-    const createBody = await createResponse.json() as IssueEnvelope;
+    await withServer(rootDirectory, async (baseUrl) => {
+      const getIssueResponse = await fetch(
+        `${baseUrl}/issues/${PROJECTED_ISSUE_ENVELOPE.issue.id}`,
+      );
+      const missingIssueResponse = await fetch(`${baseUrl}/issues/ISSUE-4040`);
+      const notImplementedQueryExpectations = [
+        {
+          pathname: "/issues",
+          code: "issue_list_not_implemented",
+          endpoint: "GET /issues",
+        },
+        {
+          pathname: "/validation/errors",
+          code: "validation_error_list_not_implemented",
+          endpoint: "GET /validation/errors",
+        },
+      ] as const;
 
-    for (const expectation of notImplementedQueryExpectations) {
-      const response = await fetch(`${baseUrl}${expectation.pathname}`);
+      expect(getIssueResponse.status).toBe(200);
+      expect(await getIssueResponse.json()).toEqual(PROJECTED_ISSUE_ENVELOPE);
 
-      expect(response.status).toBe(501);
-      expect(await response.json()).toEqual({
+      expect(missingIssueResponse.status).toBe(404);
+      expect(await missingIssueResponse.json()).toEqual({
         error: {
-          code: expectation.code,
-          message: `${expectation.endpoint} is not implemented yet.`,
+          code: "issue_not_found",
+          message: "The requested issue was not found.",
           details: {
-            endpoint: expectation.endpoint,
+            issueId: "ISSUE-4040",
           },
         },
       });
-    }
 
-    expect(createResponse.status).toBe(201);
-    expect(createBody.issue.id).toBe(CREATED_ISSUE_ID);
-    expect(await store.readIssue(CREATED_ISSUE_ID)).toEqual(createBody.issue);
-  });
+      for (const expectation of notImplementedQueryExpectations) {
+        const response = await fetch(`${baseUrl}${expectation.pathname}`);
+
+        expect(response.status).toBe(501);
+        expect(await response.json()).toEqual({
+          error: {
+            code: expectation.code,
+            message: `${expectation.endpoint} is not implemented yet.`,
+            details: {
+              endpoint: expectation.endpoint,
+            },
+          },
+        });
+      }
+    }, { queryHandlers });
+  } finally {
+    database.close();
+  }
 });
 
 test("startServer keeps the structured json 404 fallback for unmatched routes", async () => {
