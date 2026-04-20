@@ -3,8 +3,104 @@ export interface Rfc3339SortKey {
   fractionalDigits: string;
 }
 
+interface ParsedRfc3339Timestamp {
+  utcMillisecond: number;
+  fractionalDigits: string;
+}
+
 const RFC3339_TIMESTAMP_PATTERN =
   /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(Z|([+-])(\d{2}):(\d{2}))$/i;
+
+function createInvalidRfc3339TimestampError(timestamp: string): Error {
+  return new Error(`RFC3339 timestamp "${timestamp}" is invalid.`);
+}
+
+function isLeapYear(year: number): boolean {
+  return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+}
+
+function getDaysInMonth(year: number, month: number): number {
+  switch (month) {
+    case 1:
+    case 3:
+    case 5:
+    case 7:
+    case 8:
+    case 10:
+    case 12:
+      return 31;
+    case 4:
+    case 6:
+    case 9:
+    case 11:
+      return 30;
+    case 2:
+      return isLeapYear(year) ? 29 : 28;
+    default:
+      return 0;
+  }
+}
+
+function assertRfc3339DateTimeFields(
+  timestamp: string,
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+  second: number,
+): void {
+  if (year < 100) {
+    throw createInvalidRfc3339TimestampError(timestamp);
+  }
+
+  if (month < 1 || month > 12) {
+    throw createInvalidRfc3339TimestampError(timestamp);
+  }
+
+  if (day < 1 || day > getDaysInMonth(year, month)) {
+    throw createInvalidRfc3339TimestampError(timestamp);
+  }
+
+  if (hour < 0 || hour > 23) {
+    throw createInvalidRfc3339TimestampError(timestamp);
+  }
+
+  if (minute < 0 || minute > 59) {
+    throw createInvalidRfc3339TimestampError(timestamp);
+  }
+
+  if (second < 0 || second > 59) {
+    throw createInvalidRfc3339TimestampError(timestamp);
+  }
+}
+
+function assertRfc3339OffsetFields(
+  timestamp: string,
+  zoneDesignator: string,
+  offsetHours: string | undefined,
+  offsetMinutes: string | undefined,
+): void {
+  if (zoneDesignator.toUpperCase() === "Z") {
+    return;
+  }
+
+  const parsedOffsetHours =
+    offsetHours === undefined ? Number.NaN : Number.parseInt(offsetHours, 10);
+  const parsedOffsetMinutes =
+    offsetMinutes === undefined ? Number.NaN : Number.parseInt(offsetMinutes, 10);
+
+  if (
+    Number.isNaN(parsedOffsetHours)
+    || Number.isNaN(parsedOffsetMinutes)
+    || parsedOffsetHours < 0
+    || parsedOffsetHours > 23
+    || parsedOffsetMinutes < 0
+    || parsedOffsetMinutes > 59
+  ) {
+    throw createInvalidRfc3339TimestampError(timestamp);
+  }
+}
 
 function normalizeFractionalDigits(fractionalDigits: string | undefined): string {
   if (fractionalDigits === undefined) {
@@ -21,6 +117,7 @@ function formatUtcSecond(utcMillisecond: number): string {
 }
 
 function getOffsetMinutes(
+  timestamp: string,
   zoneDesignator: string,
   offsetSign: string | undefined,
   offsetHours: string | undefined,
@@ -35,7 +132,7 @@ function getOffsetMinutes(
     || offsetHours === undefined
     || offsetMinutes === undefined
   ) {
-    throw new Error("RFC3339 timestamp is invalid.");
+    throw createInvalidRfc3339TimestampError(timestamp);
   }
 
   const totalOffsetMinutes =
@@ -45,11 +142,11 @@ function getOffsetMinutes(
   return offsetSign === "+" ? totalOffsetMinutes : -totalOffsetMinutes;
 }
 
-export function normalizeRfc3339SortKey(timestamp: string): Rfc3339SortKey {
+function parseRfc3339Timestamp(timestamp: string): ParsedRfc3339Timestamp {
   const match = RFC3339_TIMESTAMP_PATTERN.exec(timestamp);
 
   if (match == null) {
-    throw new Error(`RFC3339 timestamp "${timestamp}" is invalid.`);
+    throw createInvalidRfc3339TimestampError(timestamp);
   }
 
   const [
@@ -66,16 +163,40 @@ export function normalizeRfc3339SortKey(timestamp: string): Rfc3339SortKey {
     offsetHours,
     offsetMinutes,
   ] = match;
+  const parsedYear = Number.parseInt(year, 10);
+  const parsedMonth = Number.parseInt(month, 10);
+  const parsedDay = Number.parseInt(day, 10);
+  const parsedHour = Number.parseInt(hour, 10);
+  const parsedMinute = Number.parseInt(minute, 10);
+  const parsedSecond = Number.parseInt(second, 10);
+
+  assertRfc3339DateTimeFields(
+    timestamp,
+    parsedYear,
+    parsedMonth,
+    parsedDay,
+    parsedHour,
+    parsedMinute,
+    parsedSecond,
+  );
+  assertRfc3339OffsetFields(
+    timestamp,
+    zoneDesignator,
+    offsetHours,
+    offsetMinutes,
+  );
+
   const utcMillisecond =
     Date.UTC(
-      Number.parseInt(year, 10),
-      Number.parseInt(month, 10) - 1,
-      Number.parseInt(day, 10),
-      Number.parseInt(hour, 10),
-      Number.parseInt(minute, 10),
-      Number.parseInt(second, 10),
+      parsedYear,
+      parsedMonth - 1,
+      parsedDay,
+      parsedHour,
+      parsedMinute,
+      parsedSecond,
     )
     - getOffsetMinutes(
+      timestamp,
       zoneDesignator,
       offsetSign,
       offsetHours,
@@ -83,47 +204,20 @@ export function normalizeRfc3339SortKey(timestamp: string): Rfc3339SortKey {
     ) * 60_000;
 
   if (Number.isNaN(utcMillisecond)) {
-    throw new Error(`RFC3339 timestamp "${timestamp}" is invalid.`);
+    throw createInvalidRfc3339TimestampError(timestamp);
   }
 
   return {
-    utcSecond: formatUtcSecond(utcMillisecond),
+    utcMillisecond,
     fractionalDigits: normalizeFractionalDigits(fractionalDigits),
   };
 }
 
-function compareLexicographically(left: string, right: string): number {
-  if (left === right) {
-    return 0;
-  }
+export function normalizeRfc3339SortKey(timestamp: string): Rfc3339SortKey {
+  const parsedTimestamp = parseRfc3339Timestamp(timestamp);
 
-  return left < right ? -1 : 1;
-}
-
-function compareFractionalDigits(left: string, right: string): number {
-  const maxLength = Math.max(left.length, right.length);
-
-  return compareLexicographically(
-    left.padEnd(maxLength, "0"),
-    right.padEnd(maxLength, "0"),
-  );
-}
-
-export function compareRfc3339SortKeys(
-  left: Rfc3339SortKey,
-  right: Rfc3339SortKey,
-): number {
-  const secondComparison = compareLexicographically(
-    left.utcSecond,
-    right.utcSecond,
-  );
-
-  if (secondComparison !== 0) {
-    return secondComparison;
-  }
-
-  return compareFractionalDigits(
-    left.fractionalDigits,
-    right.fractionalDigits,
-  );
+  return {
+    utcSecond: formatUtcSecond(parsedTimestamp.utcMillisecond),
+    fractionalDigits: parsedTimestamp.fractionalDigits,
+  };
 }

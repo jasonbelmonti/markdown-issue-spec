@@ -2,27 +2,18 @@ import type { Database } from "bun:sqlite";
 
 import type { Issue, Rfc3339Timestamp } from "../core/types/index.ts";
 import {
-  type IssueListCursor,
   decodeIssueListCursor,
   encodeIssueListCursor,
 } from "./issue-list-cursor.ts";
-import {
-  compareRfc3339SortKeys,
-  normalizeRfc3339SortKey,
-  type Rfc3339SortKey,
-} from "./rfc3339-sort-key.ts";
+import { normalizeRfc3339SortKey } from "./rfc3339-sort-key.ts";
 import { PROJECTION_TABLE_NAMES } from "./schema.ts";
 
 type SqlParameter = string | number;
 
 interface ProjectedIssueListRow {
   issue_id: string;
-  effective_updated_at: string;
-}
-
-interface ProjectionIssueListCandidate {
-  issueId: string;
-  sortKey: Rfc3339SortKey;
+  effective_updated_at_utc_second: string;
+  effective_updated_at_fractional: string;
 }
 
 export interface ListIssueEnvelopesQuery {
@@ -44,7 +35,10 @@ export interface ProjectionIssueListPage {
 }
 
 const ISSUE_TABLE_ALIAS = "issues";
-const EFFECTIVE_UPDATED_AT_SQL = `COALESCE(${ISSUE_TABLE_ALIAS}.updated_at, ${ISSUE_TABLE_ALIAS}.created_at)`;
+const EFFECTIVE_UPDATED_AT_UTC_SECOND_SQL =
+  `${ISSUE_TABLE_ALIAS}.effective_updated_at_utc_second`;
+const EFFECTIVE_UPDATED_AT_FRACTIONAL_SQL =
+  `${ISSUE_TABLE_ALIAS}.effective_updated_at_fractional`;
 
 function appendParameter(
   parameters: SqlParameter[],
@@ -85,6 +79,65 @@ function assertPositiveIntegerLimit(limit: number): void {
   if (!Number.isInteger(limit) || limit < 1) {
     throw new Error("Issue list limit must be a positive integer.");
   }
+}
+
+function appendUpdatedAfterCondition(
+  conditions: string[],
+  parameters: SqlParameter[],
+  updatedAfter: Rfc3339Timestamp,
+): void {
+  const updatedAfterSortKey = normalizeRfc3339SortKey(updatedAfter);
+  const utcSecondPlaceholder = appendParameter(
+    parameters,
+    updatedAfterSortKey.utcSecond,
+  );
+  const fractionalPlaceholder = appendParameter(
+    parameters,
+    updatedAfterSortKey.fractionalDigits,
+  );
+
+  conditions.push(
+    `(
+      ${EFFECTIVE_UPDATED_AT_UTC_SECOND_SQL} > ${utcSecondPlaceholder}
+      OR (
+        ${EFFECTIVE_UPDATED_AT_UTC_SECOND_SQL} = ${utcSecondPlaceholder}
+        AND ${EFFECTIVE_UPDATED_AT_FRACTIONAL_SQL} > ${fractionalPlaceholder}
+      )
+    )`,
+  );
+}
+
+function appendCursorCondition(
+  conditions: string[],
+  parameters: SqlParameter[],
+  cursor: string,
+): void {
+  const decodedCursor = decodeIssueListCursor(cursor);
+  const utcSecondPlaceholder = appendParameter(
+    parameters,
+    decodedCursor.utcSecond,
+  );
+  const fractionalPlaceholder = appendParameter(
+    parameters,
+    decodedCursor.fractionalDigits,
+  );
+  const issueIdPlaceholder = appendParameter(parameters, decodedCursor.issueId);
+
+  conditions.push(
+    `(
+      ${EFFECTIVE_UPDATED_AT_UTC_SECOND_SQL} < ${utcSecondPlaceholder}
+      OR (
+        ${EFFECTIVE_UPDATED_AT_UTC_SECOND_SQL} = ${utcSecondPlaceholder}
+        AND (
+          ${EFFECTIVE_UPDATED_AT_FRACTIONAL_SQL} < ${fractionalPlaceholder}
+          OR (
+            ${EFFECTIVE_UPDATED_AT_FRACTIONAL_SQL} = ${fractionalPlaceholder}
+            AND ${ISSUE_TABLE_ALIAS}.issue_id > ${issueIdPlaceholder}
+          )
+        )
+      )
+    )`,
+  );
 }
 
 function buildIssueListQuery(query: ListIssueEnvelopesQuery): {
@@ -149,121 +202,58 @@ function buildIssueListQuery(query: ListIssueEnvelopesQuery): {
       `${ISSUE_TABLE_ALIAS}.ready = ${appendParameter(parameters, query.ready ? 1 : 0)}`,
     );
   }
+
+  if (query.updatedAfter !== undefined) {
+    appendUpdatedAfterCondition(conditions, parameters, query.updatedAfter);
+  }
+
+  if (query.cursor !== undefined) {
+    appendCursorCondition(conditions, parameters, query.cursor);
+  }
+
+  const limitPlaceholder = appendParameter(parameters, query.limit + 1);
   const whereClause =
     conditions.length === 0 ? "" : `WHERE ${conditions.join("\n  AND ")}`;
 
   return {
     sql: `SELECT
       ${ISSUE_TABLE_ALIAS}.issue_id,
-      ${EFFECTIVE_UPDATED_AT_SQL} AS effective_updated_at
+      ${EFFECTIVE_UPDATED_AT_UTC_SECOND_SQL} AS effective_updated_at_utc_second,
+      ${EFFECTIVE_UPDATED_AT_FRACTIONAL_SQL} AS effective_updated_at_fractional
     FROM ${PROJECTION_TABLE_NAMES.issues} AS ${ISSUE_TABLE_ALIAS}
-    ${whereClause}`,
+    ${whereClause}
+    ORDER BY
+      ${EFFECTIVE_UPDATED_AT_UTC_SECOND_SQL} DESC,
+      ${EFFECTIVE_UPDATED_AT_FRACTIONAL_SQL} DESC,
+      ${ISSUE_TABLE_ALIAS}.issue_id ASC
+    LIMIT ${limitPlaceholder}`,
     parameters,
   };
 }
 
-function compareIssueIds(left: string, right: string): number {
-  if (left === right) {
-    return 0;
-  }
-
-  return left < right ? -1 : 1;
-}
-
-function compareCandidatesForPageOrder(
-  left: ProjectionIssueListCandidate,
-  right: ProjectionIssueListCandidate,
-): number {
-  const sortKeyComparison = compareRfc3339SortKeys(left.sortKey, right.sortKey);
-
-  if (sortKeyComparison !== 0) {
-    return -sortKeyComparison;
-  }
-
-  return compareIssueIds(left.issueId, right.issueId);
-}
-
-function isCandidateAfterCursor(
-  candidate: ProjectionIssueListCandidate,
-  cursor: IssueListCursor,
-): boolean {
-  const sortKeyComparison = compareRfc3339SortKeys(candidate.sortKey, {
-    utcSecond: cursor.utcSecond,
-    fractionalDigits: cursor.fractionalDigits,
-  });
-
-  if (sortKeyComparison !== 0) {
-    return sortKeyComparison < 0;
-  }
-
-  return compareIssueIds(candidate.issueId, cursor.issueId) > 0;
-}
-
-function buildCandidate(
-  row: ProjectedIssueListRow,
-): ProjectionIssueListCandidate {
-  return {
-    issueId: row.issue_id,
-    sortKey: normalizeRfc3339SortKey(row.effective_updated_at),
-  };
-}
-
-function applyUpdatedAfterFilter(
-  candidates: readonly ProjectionIssueListCandidate[],
-  updatedAfter: Rfc3339Timestamp | undefined,
-): ProjectionIssueListCandidate[] {
-  if (updatedAfter === undefined) {
-    return [...candidates];
-  }
-
-  const updatedAfterSortKey = normalizeRfc3339SortKey(updatedAfter);
-
-  return candidates.filter(
-    (candidate) =>
-      compareRfc3339SortKeys(candidate.sortKey, updatedAfterSortKey) > 0,
-  );
-}
-
-function applyCursorFilter(
-  candidates: readonly ProjectionIssueListCandidate[],
-  cursor: string | undefined,
-): ProjectionIssueListCandidate[] {
-  if (cursor === undefined) {
-    return [...candidates];
-  }
-
-  const decodedCursor = decodeIssueListCursor(cursor);
-
-  return candidates.filter((candidate) =>
-    isCandidateAfterCursor(candidate, decodedCursor),
-  );
-}
-
 function getNextCursor(
-  candidates: readonly ProjectionIssueListCandidate[],
+  rows: readonly ProjectedIssueListRow[],
   limit: number,
 ): string | null {
-  if (candidates.length <= limit) {
+  if (rows.length <= limit) {
     return null;
   }
 
-  const lastCandidate = candidates[limit - 1];
+  const lastRow = rows[limit - 1];
 
-  if (lastCandidate === undefined) {
+  if (lastRow === undefined) {
     return null;
   }
 
   return encodeIssueListCursor({
-    utcSecond: lastCandidate.sortKey.utcSecond,
-    fractionalDigits: lastCandidate.sortKey.fractionalDigits,
-    issueId: lastCandidate.issueId,
+    utcSecond: lastRow.effective_updated_at_utc_second,
+    fractionalDigits: lastRow.effective_updated_at_fractional,
+    issueId: lastRow.issue_id,
   });
 }
 
-function getIssueIds(
-  candidates: readonly ProjectionIssueListCandidate[],
-): string[] {
-  return candidates.map((candidate) => candidate.issueId);
+function getIssueIds(rows: readonly ProjectedIssueListRow[]): string[] {
+  return rows.map((row) => row.issue_id);
 }
 
 export function readIssueListPage(
@@ -276,14 +266,10 @@ export function readIssueListPage(
   const rows = database
     .query<ProjectedIssueListRow, SqlParameter[]>(builtQuery.sql)
     .all(...builtQuery.parameters);
-  const candidates = applyCursorFilter(
-    applyUpdatedAfterFilter(rows.map(buildCandidate), query.updatedAfter),
-    query.cursor,
-  ).sort(compareCandidatesForPageOrder);
-  const selectedCandidates = candidates.slice(0, query.limit);
+  const selectedRows = rows.slice(0, query.limit);
 
   return {
-    issueIds: getIssueIds(selectedCandidates),
-    nextCursor: getNextCursor(candidates, query.limit),
+    issueIds: getIssueIds(selectedRows),
+    nextCursor: getNextCursor(rows, query.limit),
   };
 }

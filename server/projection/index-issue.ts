@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
 
 import type { IssueEnvelope, IssueLink } from "../core/types/index.ts";
+import { normalizeRfc3339SortKey } from "./rfc3339-sort-key.ts";
 import { PROJECTION_TABLE_NAMES } from "./schema.ts";
 import { serializeProjectionJson } from "./json.ts";
 
@@ -10,6 +11,9 @@ function booleanToInteger(value: boolean): 0 | 1 {
 
 function upsertIssueRow(database: Database, envelope: IssueEnvelope): void {
   const { derived, issue, revision, source } = envelope;
+  const effectiveUpdatedAtSortKey = normalizeRfc3339SortKey(
+    issue.updated_at ?? issue.created_at,
+  );
 
   database
     .query(
@@ -25,6 +29,8 @@ function upsertIssueRow(database: Database, envelope: IssueEnvelope): void {
          priority,
          created_at,
          updated_at,
+         effective_updated_at_utc_second,
+         effective_updated_at_fractional,
          revision,
          file_path,
          indexed_at,
@@ -35,7 +41,7 @@ function upsertIssueRow(database: Database, envelope: IssueEnvelope): void {
          is_blocked,
          extensions_json
        ) VALUES (
-         ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20
+         ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22
        )
        ON CONFLICT(issue_id) DO UPDATE SET
          spec_version = excluded.spec_version,
@@ -48,6 +54,8 @@ function upsertIssueRow(database: Database, envelope: IssueEnvelope): void {
          priority = excluded.priority,
          created_at = excluded.created_at,
          updated_at = excluded.updated_at,
+         effective_updated_at_utc_second = excluded.effective_updated_at_utc_second,
+         effective_updated_at_fractional = excluded.effective_updated_at_fractional,
          revision = excluded.revision,
          file_path = excluded.file_path,
          indexed_at = excluded.indexed_at,
@@ -70,6 +78,8 @@ function upsertIssueRow(database: Database, envelope: IssueEnvelope): void {
       issue.priority ?? null,
       issue.created_at,
       issue.updated_at ?? null,
+      effectiveUpdatedAtSortKey.utcSecond,
+      effectiveUpdatedAtSortKey.fractionalDigits,
       revision,
       source.file_path,
       source.indexed_at,

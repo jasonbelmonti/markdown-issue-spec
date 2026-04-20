@@ -14,9 +14,10 @@ type ProjectionDatabase = ReturnType<typeof openProjectionDatabase>;
 
 const EXPECTED_SCHEMA_OBJECTS: Array<{ name: string; type: string }> = [
   { name: "assignees_assignee_issue_id_idx", type: "index" },
-  { name: "issues_kind_updated_at_idx", type: "index" },
-  { name: "issues_ready_updated_at_idx", type: "index" },
-  { name: "issues_status_updated_at_idx", type: "index" },
+  { name: "issues_effective_updated_at_sort_idx", type: "index" },
+  { name: "issues_kind_effective_updated_at_sort_idx", type: "index" },
+  { name: "issues_ready_effective_updated_at_sort_idx", type: "index" },
+  { name: "issues_status_effective_updated_at_sort_idx", type: "index" },
   { name: "labels_label_issue_id_idx", type: "index" },
   { name: "links_rel_target_issue_id_idx", type: "index" },
   { name: "validation_errors_issue_id_idx", type: "index" },
@@ -177,6 +178,47 @@ test("applyProjectionSchema adds issue presence columns for older projection dat
         extensions_json TEXT
       )`,
     );
+    database
+      .query(
+        `INSERT INTO ${PROJECTION_TABLE_NAMES.issues} (
+          issue_id,
+          spec_version,
+          title,
+          kind,
+          status,
+          resolution,
+          summary,
+          body,
+          priority,
+          created_at,
+          updated_at,
+          revision,
+          file_path,
+          indexed_at,
+          ready,
+          is_blocked,
+          extensions_json
+        ) VALUES (
+          'ISSUE-legacy',
+          'mis/0.1',
+          'Legacy issue',
+          'task',
+          'accepted',
+          NULL,
+          NULL,
+          NULL,
+          NULL,
+          '2026-04-10T12:00:00.0004Z',
+          NULL,
+          'rev-legacy',
+          'vault/issues/ISSUE-legacy.md',
+          '2026-04-10T12:30:00Z',
+          1,
+          0,
+          NULL
+        )`,
+      )
+      .run();
 
     applyProjectionSchema(database);
 
@@ -198,10 +240,33 @@ test("applyProjectionSchema adds issue presence columns for older projection dat
       "ready",
       "is_blocked",
       "extensions_json",
+      "effective_updated_at_utc_second",
+      "effective_updated_at_fractional",
       "has_labels",
       "has_assignees",
       "has_links",
     ]);
+
+    expect(
+      database
+        .query<
+          {
+            effective_updated_at_utc_second: string;
+            effective_updated_at_fractional: string;
+          },
+          []
+        >(
+          `SELECT
+             effective_updated_at_utc_second,
+             effective_updated_at_fractional
+           FROM ${PROJECTION_TABLE_NAMES.issues}
+           WHERE issue_id = 'ISSUE-legacy'`,
+        )
+        .get(),
+    ).toEqual({
+      effective_updated_at_utc_second: "2026-04-10T12:00:00Z",
+      effective_updated_at_fractional: "0004",
+    });
   } finally {
     database.close();
   }

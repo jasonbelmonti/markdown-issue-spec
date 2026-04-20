@@ -1,6 +1,8 @@
 import type { Database } from "bun:sqlite";
 
-export const PROJECTION_SCHEMA_VERSION = 2;
+import { normalizeRfc3339SortKey } from "./rfc3339-sort-key.ts";
+
+export const PROJECTION_SCHEMA_VERSION = 3;
 const PROJECTION_SCHEMA_VERSION_KEY = "schema_version";
 
 export const PROJECTION_TABLE_NAMES = {
@@ -17,15 +19,33 @@ const ISSUE_PRESENCE_COLUMNS = [
   "has_assignees",
   "has_links",
 ] as const;
+const ISSUE_SORT_KEY_COLUMNS = [
+  "effective_updated_at_utc_second",
+  "effective_updated_at_fractional",
+] as const;
 
 type IssuePresenceColumn = (typeof ISSUE_PRESENCE_COLUMNS)[number];
+type IssueSortKeyColumn = (typeof ISSUE_SORT_KEY_COLUMNS)[number];
+
+interface IssueSortKeyBackfillRow {
+  issue_id: string;
+  created_at: string;
+  updated_at: string | null;
+}
 
 function getIssuePresenceColumnDefinition(columnName: IssuePresenceColumn): string {
   return `${columnName} INTEGER NOT NULL CHECK (${columnName} IN (0, 1)) DEFAULT 0`;
 }
 
+function getIssueSortKeyColumnDefinition(columnName: IssueSortKeyColumn): string {
+  return `${columnName} TEXT NOT NULL DEFAULT ''`;
+}
+
 const ISSUE_PRESENCE_COLUMN_SQL = ISSUE_PRESENCE_COLUMNS
   .map((columnName) => getIssuePresenceColumnDefinition(columnName))
+  .join(",\n    ");
+const ISSUE_SORT_KEY_COLUMN_SQL = ISSUE_SORT_KEY_COLUMNS
+  .map((columnName) => getIssueSortKeyColumnDefinition(columnName))
   .join(",\n    ");
 
 const CREATE_TABLE_STATEMENTS = [
@@ -50,6 +70,7 @@ const CREATE_TABLE_STATEMENTS = [
     priority TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT,
+    ${ISSUE_SORT_KEY_COLUMN_SQL},
     revision TEXT NOT NULL,
     file_path TEXT NOT NULL UNIQUE,
     indexed_at TEXT NOT NULL,
@@ -109,12 +130,33 @@ const CREATE_TABLE_STATEMENTS = [
 ] as const;
 
 const CREATE_INDEX_STATEMENTS = [
-  `CREATE INDEX IF NOT EXISTS issues_status_updated_at_idx
-    ON ${PROJECTION_TABLE_NAMES.issues}(status, updated_at, issue_id)`,
-  `CREATE INDEX IF NOT EXISTS issues_kind_updated_at_idx
-    ON ${PROJECTION_TABLE_NAMES.issues}(kind, updated_at, issue_id)`,
-  `CREATE INDEX IF NOT EXISTS issues_ready_updated_at_idx
-    ON ${PROJECTION_TABLE_NAMES.issues}(ready, updated_at, issue_id)`,
+  `CREATE INDEX IF NOT EXISTS issues_effective_updated_at_sort_idx
+    ON ${PROJECTION_TABLE_NAMES.issues}(
+      effective_updated_at_utc_second DESC,
+      effective_updated_at_fractional DESC,
+      issue_id ASC
+    )`,
+  `CREATE INDEX IF NOT EXISTS issues_status_effective_updated_at_sort_idx
+    ON ${PROJECTION_TABLE_NAMES.issues}(
+      status,
+      effective_updated_at_utc_second DESC,
+      effective_updated_at_fractional DESC,
+      issue_id ASC
+    )`,
+  `CREATE INDEX IF NOT EXISTS issues_kind_effective_updated_at_sort_idx
+    ON ${PROJECTION_TABLE_NAMES.issues}(
+      kind,
+      effective_updated_at_utc_second DESC,
+      effective_updated_at_fractional DESC,
+      issue_id ASC
+    )`,
+  `CREATE INDEX IF NOT EXISTS issues_ready_effective_updated_at_sort_idx
+    ON ${PROJECTION_TABLE_NAMES.issues}(
+      ready,
+      effective_updated_at_utc_second DESC,
+      effective_updated_at_fractional DESC,
+      issue_id ASC
+    )`,
   `CREATE INDEX IF NOT EXISTS labels_label_issue_id_idx
     ON ${PROJECTION_TABLE_NAMES.labels}(label, issue_id)`,
   `CREATE INDEX IF NOT EXISTS assignees_assignee_issue_id_idx
@@ -163,12 +205,60 @@ function ensureIssuePresenceColumns(database: Database): void {
   }
 }
 
+function ensureIssueSortKeyColumns(database: Database): void {
+  const existingColumns = listIssuesTableColumns(database);
+
+  for (const columnName of ISSUE_SORT_KEY_COLUMNS) {
+    if (existingColumns.has(columnName)) {
+      continue;
+    }
+
+    database.exec(
+      `ALTER TABLE ${PROJECTION_TABLE_NAMES.issues}
+       ADD COLUMN ${getIssueSortKeyColumnDefinition(columnName)}`,
+    );
+  }
+}
+
+function backfillIssueSortKeyColumns(database: Database): void {
+  const rows = database
+    .query<IssueSortKeyBackfillRow, []>(
+      `SELECT issue_id, created_at, updated_at
+       FROM ${PROJECTION_TABLE_NAMES.issues}
+       WHERE effective_updated_at_utc_second = ''`,
+    )
+    .all();
+
+  if (rows.length === 0) {
+    return;
+  }
+
+  const updateSortKeys = database.query(
+    `UPDATE ${PROJECTION_TABLE_NAMES.issues}
+     SET effective_updated_at_utc_second = ?2,
+         effective_updated_at_fractional = ?3
+     WHERE issue_id = ?1`,
+  );
+
+  for (const row of rows) {
+    const sortKey = normalizeRfc3339SortKey(row.updated_at ?? row.created_at);
+
+    updateSortKeys.run(
+      row.issue_id,
+      sortKey.utcSecond,
+      sortKey.fractionalDigits,
+    );
+  }
+}
+
 export function applyProjectionSchema(database: Database): void {
   for (const statement of CREATE_TABLE_STATEMENTS) {
     database.exec(statement);
   }
 
+  ensureIssueSortKeyColumns(database);
   ensureIssuePresenceColumns(database);
+  backfillIssueSortKeyColumns(database);
 
   for (const statement of CREATE_INDEX_STATEMENTS) {
     database.exec(statement);
