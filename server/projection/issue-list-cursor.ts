@@ -15,6 +15,9 @@ export interface IssueListCursor {
 
 const ISSUE_LIST_CURSOR_VERSION = 2;
 const BASE64_URL_PATTERN = /^[A-Za-z0-9_-]+$/;
+const CURSOR_UTC_SECOND_PATTERN =
+  /^-?\d{6}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
+const CURSOR_FRACTIONAL_DIGITS_PATTERN = /^\d*$/;
 
 function throwInvalidIssueListCursor(): never {
   throw new Error("Issue list cursor is invalid.");
@@ -53,8 +56,9 @@ function isIssueListCursorPayload(
   return (
     payload.v === ISSUE_LIST_CURSOR_VERSION
     && typeof payload.utcSecond === "string"
-    && payload.utcSecond.length > 0
+    && CURSOR_UTC_SECOND_PATTERN.test(payload.utcSecond)
     && typeof payload.fractionalDigits === "string"
+    && CURSOR_FRACTIONAL_DIGITS_PATTERN.test(payload.fractionalDigits)
     && typeof payload.issueId === "string"
     && payload.issueId.length > 0
   );
