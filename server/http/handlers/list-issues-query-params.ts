@@ -267,8 +267,41 @@ function parseLimit(
   return parsedLimit;
 }
 
+function getSingleRawQueryParameterValue(
+  requestUrl: string,
+  parameterName: IssueListQueryParameterName,
+): string | undefined {
+  const queryString = new URL(requestUrl).search.slice(1);
+
+  if (queryString.length === 0) {
+    return undefined;
+  }
+
+  const matches = [...queryString.matchAll(
+    new RegExp(`(?:^|&)${parameterName}=([^&]*)`, "gu"),
+  )];
+
+  if (matches.length !== 1) {
+    return undefined;
+  }
+
+  return matches[0]?.[1];
+}
+
+function normalizeUpdatedAfterValue(
+  updatedAfter: string,
+  rawUpdatedAfter: string | undefined,
+): string {
+  if (rawUpdatedAfter?.includes("+")) {
+    return updatedAfter.replaceAll(" ", "+");
+  }
+
+  return updatedAfter;
+}
+
 function parseUpdatedAfter(
   value: string | undefined,
+  rawValue: string | undefined,
   errors: QueryRequestValidationError[],
 ): string | undefined {
   const updatedAfter = parseNonEmptyString("updated_after", value, errors);
@@ -277,8 +310,13 @@ function parseUpdatedAfter(
     return undefined;
   }
 
+  const normalizedUpdatedAfter = normalizeUpdatedAfterValue(
+    updatedAfter,
+    rawValue,
+  );
+
   try {
-    normalizeRfc3339SortKey(updatedAfter);
+    normalizeRfc3339SortKey(normalizedUpdatedAfter);
   } catch {
     errors.push(
       createIssueListQueryRequestValidationError({
@@ -295,7 +333,7 @@ function parseUpdatedAfter(
     return undefined;
   }
 
-  return updatedAfter;
+  return normalizedUpdatedAfter;
 }
 
 function parseCursor(
@@ -364,7 +402,11 @@ export function parseListIssuesQuery(
     errors,
   );
   const ready = parseReady(valuesByName.ready, errors);
-  const updatedAfter = parseUpdatedAfter(valuesByName.updated_after, errors);
+  const updatedAfter = parseUpdatedAfter(
+    valuesByName.updated_after,
+    getSingleRawQueryParameterValue(request.url, "updated_after"),
+    errors,
+  );
   const limit = parseLimit(valuesByName.limit, errors);
   const cursor = parseCursor(valuesByName.cursor, errors);
 

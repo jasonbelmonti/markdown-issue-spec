@@ -41,6 +41,19 @@ test("parseListIssuesQuery maps supported single-valued filters onto the project
   });
 });
 
+test("parseListIssuesQuery preserves positive updated_after offsets passed with a raw plus sign", () => {
+  expect(
+    parseListIssuesQuery(
+      createIssuesRequest(
+        "/issues?updated_after=2026-04-19T12:00:00+05:00",
+      ),
+    ),
+  ).toEqual({
+    updatedAfter: "2026-04-19T12:00:00+05:00",
+    limit: DEFAULT_ISSUE_LIST_LIMIT,
+  });
+});
+
 test("parseListIssuesQuery defaults limit when it is omitted", () => {
   expect(parseListIssuesQuery(createIssuesRequest())).toEqual({
     limit: DEFAULT_ISSUE_LIST_LIMIT,
@@ -196,6 +209,36 @@ test("parseListIssuesQuery rejects invalid status and empty string filters", () 
         source: "request",
         path: "/parent_id",
         message: "Query parameter `parent_id` must be a non-empty string.",
+      },
+    ]);
+  }
+});
+
+test("parseListIssuesQuery still rejects updated_after values with encoded spaces", () => {
+  const request = createIssuesRequest(
+    "/issues?updated_after=2026-04-19T12:00:00%2005:00",
+  );
+
+  try {
+    parseListIssuesQuery(request);
+    throw new Error("Expected query validation to fail.");
+  } catch (error) {
+    expect(error).toBeInstanceOf(IssueListQueryValidationError);
+
+    if (!(error instanceof IssueListQueryValidationError)) {
+      return;
+    }
+
+    expect(error.errors).toEqual([
+      {
+        code: "query.invalid_updated_after",
+        source: "request",
+        path: "/updated_after",
+        message:
+          "Query parameter `updated_after` must be a valid RFC3339 timestamp.",
+        details: {
+          updated_after: "2026-04-19T12:00:00 05:00",
+        },
       },
     ]);
   }
