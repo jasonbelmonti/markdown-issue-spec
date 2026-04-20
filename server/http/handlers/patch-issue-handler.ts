@@ -12,6 +12,7 @@ import { jsonResponse } from "../response/json.ts";
 import type { HttpRouteHandler, HttpRouteRequest } from "../route-contract.ts";
 import { defaultFilesystemIssueMutationLock } from "./default-filesystem-issue-mutation-lock.ts";
 import { getIssueIdFromRequest } from "./issue-id-from-request.ts";
+import { createIssueNotFoundResponse } from "./issue-not-found-response.ts";
 import { createNotImplementedMutationResponse } from "./not-implemented-mutation-response.ts";
 
 const defaultIssueMutationBoundary = createFilesystemPatchIssueMutationBoundary({
@@ -55,19 +56,6 @@ function createPatchValidationErrorResponse(
       message: "Issue patch validation failed.",
       details: {
         errors: error.errors,
-      },
-    }),
-  );
-}
-
-function createIssueNotFoundResponse(issueId: string): Response {
-  return createApiErrorResponse(
-    createApiError({
-      status: 404,
-      code: "issue_not_found",
-      message: "The requested issue was not found.",
-      details: {
-        issueId,
       },
     }),
   );

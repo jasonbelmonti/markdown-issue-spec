@@ -2,6 +2,7 @@ import { TransitionIssueValidationError } from "../../application/mutations/tran
 import { createApiError } from "../errors/api-error.ts";
 import { createApiErrorResponse } from "../errors/error-response.ts";
 import type { TransitionIssueMutationBoundary } from "../../application/mutations/issue-mutation-boundary.ts";
+import { createIssueNotFoundResponse } from "./issue-not-found-response.ts";
 
 export function createTransitionRevisionMismatchResponse(
   result: Extract<
@@ -38,17 +39,4 @@ export function createTransitionValidationErrorResponse(
   );
 }
 
-export function createTransitionIssueNotFoundResponse(
-  issueId: string,
-): Response {
-  return createApiErrorResponse(
-    createApiError({
-      status: 404,
-      code: "issue_not_found",
-      message: "The requested issue was not found.",
-      details: {
-        issueId,
-      },
-    }),
-  );
-}
+export const createTransitionIssueNotFoundResponse = createIssueNotFoundResponse;
