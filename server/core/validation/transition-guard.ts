@@ -4,6 +4,12 @@ import type {
   IssueLink,
   IssueStatus,
 } from "../types/index.ts";
+import {
+  isDependencyLink,
+  isDependencySatisfied,
+  shouldEvaluateDependencyForTransition,
+  type GuardedDependencyTransitionStatus,
+} from "../dependency-readiness.ts";
 
 export type TransitionGuardSource = "transition_guard";
 
@@ -74,18 +80,10 @@ function createTransitionGuardError(
   };
 }
 
-function isDependencyLink(link: IssueLink): link is DependencyIssueLink {
-  return link.rel === "depends_on";
-}
-
 export function isGuardedIssueTransitionStatus(
   nextStatus: IssueStatus,
 ): nextStatus is GuardedIssueTransitionStatus {
   return nextStatus === "in_progress" || nextStatus === "completed";
-}
-
-function isDependencySatisfied(issue: Issue): boolean {
-  return issue.status === "completed" && issue.resolution === "done";
 }
 
 function isTerminalIssueStatus(
@@ -102,26 +100,10 @@ function readIssueResolution(issue: Issue): Issue["resolution"] | null {
   return null;
 }
 
-function shouldEvaluateDependencyForTransition(
-  issue: Issue,
-  link: DependencyIssueLink,
-  nextStatus: GuardedIssueTransitionStatus,
-): boolean {
-  if (nextStatus === "in_progress") {
-    return link.required_before === "in_progress";
-  }
-
-  if (link.required_before === "completed") {
-    return true;
-  }
-
-  return issue.status !== "in_progress";
-}
-
 export function findRelevantDependencyLinks(
   issue: Issue,
-  nextStatus: GuardedIssueTransitionStatus,
-) : RelevantDependencyLinkEntry[] {
+  nextStatus: GuardedDependencyTransitionStatus,
+): RelevantDependencyLinkEntry[] {
   const relevantLinks: RelevantDependencyLinkEntry[] = [];
 
   for (const [index, link] of (issue.links ?? []).entries()) {
@@ -129,7 +111,7 @@ export function findRelevantDependencyLinks(
       continue;
     }
 
-    if (!shouldEvaluateDependencyForTransition(issue, link, nextStatus)) {
+    if (!shouldEvaluateDependencyForTransition(issue.status, link, nextStatus)) {
       continue;
     }
 

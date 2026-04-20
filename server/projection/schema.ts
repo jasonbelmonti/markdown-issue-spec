@@ -1,6 +1,6 @@
 import type { Database } from "bun:sqlite";
 
-export const PROJECTION_SCHEMA_VERSION = 1;
+export const PROJECTION_SCHEMA_VERSION = 2;
 const PROJECTION_SCHEMA_VERSION_KEY = "schema_version";
 
 export const PROJECTION_TABLE_NAMES = {
@@ -11,6 +11,22 @@ export const PROJECTION_TABLE_NAMES = {
   links: "issue_links",
   validationErrors: "validation_errors",
 } as const;
+
+const ISSUE_PRESENCE_COLUMNS = [
+  "has_labels",
+  "has_assignees",
+  "has_links",
+] as const;
+
+type IssuePresenceColumn = (typeof ISSUE_PRESENCE_COLUMNS)[number];
+
+function getIssuePresenceColumnDefinition(columnName: IssuePresenceColumn): string {
+  return `${columnName} INTEGER NOT NULL CHECK (${columnName} IN (0, 1)) DEFAULT 0`;
+}
+
+const ISSUE_PRESENCE_COLUMN_SQL = ISSUE_PRESENCE_COLUMNS
+  .map((columnName) => getIssuePresenceColumnDefinition(columnName))
+  .join(",\n    ");
 
 const CREATE_TABLE_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS ${PROJECTION_TABLE_NAMES.metadata} (
@@ -37,6 +53,7 @@ const CREATE_TABLE_STATEMENTS = [
     revision TEXT NOT NULL,
     file_path TEXT NOT NULL UNIQUE,
     indexed_at TEXT NOT NULL,
+    ${ISSUE_PRESENCE_COLUMN_SQL},
     ready INTEGER NOT NULL CHECK (ready IN (0, 1)),
     is_blocked INTEGER NOT NULL CHECK (is_blocked IN (0, 1)),
     extensions_json TEXT
@@ -120,10 +137,38 @@ function setProjectionSchemaVersion(database: Database): void {
     .run(PROJECTION_SCHEMA_VERSION_KEY, String(PROJECTION_SCHEMA_VERSION));
 }
 
+function listIssuesTableColumns(database: Database): Set<string> {
+  return new Set(
+    database
+      .query<{ name: string }, []>(
+        `PRAGMA table_info(${PROJECTION_TABLE_NAMES.issues})`,
+      )
+      .all()
+      .map((column: { name: string }) => column.name),
+  );
+}
+
+function ensureIssuePresenceColumns(database: Database): void {
+  const existingColumns = listIssuesTableColumns(database);
+
+  for (const columnName of ISSUE_PRESENCE_COLUMNS) {
+    if (existingColumns.has(columnName)) {
+      continue;
+    }
+
+    database.exec(
+      `ALTER TABLE ${PROJECTION_TABLE_NAMES.issues}
+       ADD COLUMN ${getIssuePresenceColumnDefinition(columnName)}`,
+    );
+  }
+}
+
 export function applyProjectionSchema(database: Database): void {
   for (const statement of CREATE_TABLE_STATEMENTS) {
     database.exec(statement);
   }
+
+  ensureIssuePresenceColumns(database);
 
   for (const statement of CREATE_INDEX_STATEMENTS) {
     database.exec(statement);

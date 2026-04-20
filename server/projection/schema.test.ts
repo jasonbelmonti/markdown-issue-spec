@@ -79,6 +79,15 @@ function listProjectionTables(database: ProjectionDatabase) {
     .all();
 }
 
+function listIssuesColumns(database: ProjectionDatabase) {
+  return database
+    .query<{ name: string }, []>(
+      `PRAGMA table_info(${PROJECTION_TABLE_NAMES.issues})`,
+    )
+    .all()
+    .map((column) => column.name);
+}
+
 test("applyProjectionSchema creates the projection tables and indexes for the MVP query shape", () => {
   const database = openMemoryProjectionDatabase();
 
@@ -138,6 +147,61 @@ test("openProjectionDatabase creates parent directories, enables foreign keys, a
     expect(foreignKeys).toEqual({ foreign_keys: 1 });
 
     expect(listProjectionTables(database)).toEqual(EXPECTED_TABLE_ROWS);
+  } finally {
+    database.close();
+  }
+});
+
+test("applyProjectionSchema adds issue presence columns for older projection databases", () => {
+  const database = openMemoryProjectionDatabase();
+
+  try {
+    database.exec(
+      `CREATE TABLE ${PROJECTION_TABLE_NAMES.issues} (
+        issue_id TEXT PRIMARY KEY,
+        spec_version TEXT NOT NULL,
+        title TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        status TEXT NOT NULL,
+        resolution TEXT,
+        summary TEXT,
+        body TEXT,
+        priority TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT,
+        revision TEXT NOT NULL,
+        file_path TEXT NOT NULL UNIQUE,
+        indexed_at TEXT NOT NULL,
+        ready INTEGER NOT NULL CHECK (ready IN (0, 1)),
+        is_blocked INTEGER NOT NULL CHECK (is_blocked IN (0, 1)),
+        extensions_json TEXT
+      )`,
+    );
+
+    applyProjectionSchema(database);
+
+    expect(listIssuesColumns(database)).toEqual([
+      "issue_id",
+      "spec_version",
+      "title",
+      "kind",
+      "status",
+      "resolution",
+      "summary",
+      "body",
+      "priority",
+      "created_at",
+      "updated_at",
+      "revision",
+      "file_path",
+      "indexed_at",
+      "ready",
+      "is_blocked",
+      "extensions_json",
+      "has_labels",
+      "has_assignees",
+      "has_links",
+    ]);
   } finally {
     database.close();
   }
