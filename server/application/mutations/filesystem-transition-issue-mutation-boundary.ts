@@ -6,9 +6,11 @@ import {
 import {
   loadTransitionIssueFilesystemState,
   persistTransitionedIssueAndBuildEnvelope,
+  rollbackTransitionedIssue,
 } from "./transition-issue-filesystem-state.ts";
 import { normalizeTransitionIssueInput } from "./normalize-transition-issue-input.ts";
 import { prepareTransitionIssueMutation } from "./prepare-transition-issue-mutation.ts";
+import { finalizePersistedIssueMutation } from "./finalize-persisted-issue-mutation.ts";
 import {
   toTransitionIssueValidationError,
 } from "./transition-issue-validation-error.ts";
@@ -65,13 +67,17 @@ export function createFilesystemTransitionIssueMutationBoundary(
 
             await beforePersist?.();
 
-            const envelope = await persistTransitionedIssueAndBuildEnvelope(
-              filesystemState,
-              rootDirectory,
-              preparedMutation.issue,
-              indexedAt,
-            );
-            await afterPersist?.();
+            const envelope = await finalizePersistedIssueMutation({
+              persist: () =>
+                persistTransitionedIssueAndBuildEnvelope(
+                  filesystemState,
+                  rootDirectory,
+                  preparedMutation.issue,
+                  indexedAt,
+                ),
+              rollback: () => rollbackTransitionedIssue(filesystemState),
+              afterPersist,
+            });
 
             return {
               status: "applied",

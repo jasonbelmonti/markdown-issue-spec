@@ -2,6 +2,7 @@ import {
   getPatchIssueGraphValidationErrors,
   loadPatchIssueFilesystemState,
   persistPatchedIssueAndBuildEnvelope,
+  rollbackPatchedIssue,
 } from "./patch-issue-filesystem-state.ts";
 import {
   parsePatchIssueCandidate,
@@ -16,6 +17,7 @@ import {
   type FilesystemIssueMutationLock,
   withFilesystemIssueMutationLock,
 } from "./filesystem-issue-mutation-lock.ts";
+import { finalizePersistedIssueMutation } from "./finalize-persisted-issue-mutation.ts";
 import type {
   PatchIssueMutationBoundary,
   PatchIssueMutationCommand,
@@ -85,13 +87,17 @@ export function createFilesystemPatchIssueMutationBoundary(
 
             await beforePersist?.();
 
-            const envelope = await persistPatchedIssueAndBuildEnvelope(
-              filesystemState,
-              rootDirectory,
-              issue,
-              indexedAt,
-            );
-            await afterPersist?.();
+            const envelope = await finalizePersistedIssueMutation({
+              persist: () =>
+                persistPatchedIssueAndBuildEnvelope(
+                  filesystemState,
+                  rootDirectory,
+                  issue,
+                  indexedAt,
+                ),
+              rollback: () => rollbackPatchedIssue(filesystemState),
+              afterPersist,
+            });
 
             return {
               status: "applied",

@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+
 import type {
   Issue,
   IssueEnvelope,
@@ -12,6 +14,7 @@ import {
   toStartupRelativeFilePath,
   type ParsedStartupIssueFile,
 } from "../../startup/index.ts";
+import { atomicWriteFile } from "../../store/atomic-write.ts";
 import { FilesystemIssueStore } from "../../store/index.ts";
 import { UnsafeIssueIdError } from "../../store/issue-file-path.ts";
 import { PatchIssueNotFoundError } from "./patch-issue-not-found-error.ts";
@@ -25,6 +28,8 @@ import {
 export interface PatchIssueFilesystemState {
   currentParsedIssue: ParsedStartupIssueFile;
   currentParsedIssues: ParsedStartupIssueFile[];
+  canonicalFilePath: string;
+  originalSource: string;
   store: FilesystemIssueStore;
 }
 
@@ -126,6 +131,8 @@ export async function loadPatchIssueFilesystemState(
   return {
     currentParsedIssue,
     currentParsedIssues: await loadParsedStartupIssues(rootDirectory, indexedAt),
+    canonicalFilePath: filePath,
+    originalSource: await readFile(filePath, "utf8"),
     store,
   };
 }
@@ -201,4 +208,10 @@ export async function persistPatchedIssueAndBuildEnvelope(
   );
 
   return buildPatchedIssueEnvelope(persistedIssue, state.currentParsedIssues);
+}
+
+export async function rollbackPatchedIssue(
+  state: PatchIssueFilesystemState,
+): Promise<void> {
+  await atomicWriteFile(state.canonicalFilePath, state.originalSource);
 }
