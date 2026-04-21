@@ -1,4 +1,3 @@
-import { clearProjectionState } from "../projection/index.ts";
 import {
   scanIssueFilesIntoProjection,
   type ScanIssuesIntoProjectionOptions,
@@ -13,7 +12,5 @@ export type RebuildProjectionFromCanonicalMarkdownResult = StartupScanResult;
 export async function rebuildProjectionFromCanonicalMarkdown(
   options: RebuildProjectionFromCanonicalMarkdownOptions,
 ): Promise<RebuildProjectionFromCanonicalMarkdownResult> {
-  clearProjectionState(options.database);
-
   return scanIssueFilesIntoProjection(options);
 }

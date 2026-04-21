@@ -18,13 +18,19 @@ import {
 import { FilesystemIssueStore } from "../store/index.ts";
 import { computeIssueRevision } from "../store/issue-revision.ts";
 import { createCreateIssueHandler } from "./handlers/create-issue-handler.ts";
+import { createFilesystemAdminRouteHandlers } from "./handlers/filesystem-admin-handlers.ts";
+import { createFilesystemMutationRouteHandlers } from "./handlers/filesystem-mutation-handlers.ts";
 import { defaultQueryHandlers } from "./handlers/default-query-handlers.ts";
 import { createGetIssueHandler } from "./handlers/get-issue-handler.ts";
 import { createGetIssueListHandler } from "./handlers/get-issue-list-handler.ts";
 import { createGetValidationErrorListHandler } from "./handlers/get-validation-error-list-handler.ts";
 import { MAX_ISSUE_LIST_LIMIT } from "./handlers/list-issues-query-params.ts";
 import { createPatchIssueHandler } from "./handlers/patch-issue-handler.ts";
-import type { QueryRouteHandlers } from "./handlers/types.ts";
+import type {
+  AdminRouteHandlers,
+  MutationRouteHandlers,
+  QueryRouteHandlers,
+} from "./handlers/types.ts";
 import { startServer } from "./server.ts";
 import {
   indexProjectedValidationErrors,
@@ -171,27 +177,22 @@ async function withServer<T>(
   rootDirectory: string,
   run: (baseUrl: string) => Promise<T>,
   options: {
+    adminHandlers?: AdminRouteHandlers;
+    mutationHandlers?: MutationRouteHandlers;
     queryHandlers?: QueryRouteHandlers;
   } = {},
 ): Promise<T> {
   const server = startServer({
     port: 0,
-    mutationHandlers: {
-      createIssue: createCreateIssueHandler(
-        createFilesystemCreateIssueMutationBoundary({
-          rootDirectory,
-          issueIdGenerator: () => CREATED_ISSUE_ID,
-          now: () => CREATE_TIMESTAMP,
-        }),
-      ),
-      patchIssue: createPatchIssueHandler(
-        createFilesystemPatchIssueMutationBoundary({
-          rootDirectory,
-          now: () => PATCH_TIMESTAMP,
-        }),
-      ),
-      transitionIssue: () => new Response("unused", { status: 500 }),
-    },
+    adminHandlers: options.adminHandlers,
+    mutationHandlers:
+      options.mutationHandlers ??
+      createFilesystemMutationRouteHandlers({
+        rootDirectory,
+        issueIdGenerator: () => CREATED_ISSUE_ID,
+        createNow: () => CREATE_TIMESTAMP,
+        patchNow: () => PATCH_TIMESTAMP,
+      }),
     queryHandlers: options.queryHandlers,
   });
 
@@ -320,6 +321,97 @@ test("startServer serves real create and patch outcomes", async () => {
     );
 
   });
+});
+
+test("startServer refreshes projection after accepted create and patch mutations and leaves it unchanged after rejected patches", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+  const store = new FilesystemIssueStore({ rootDirectory });
+  const database = openProjectionDatabase(join(rootDirectory, ".mis", "index.sqlite"));
+
+  await store.writeIssue(EXISTING_ISSUE);
+
+  try {
+    await withServer(
+      rootDirectory,
+      async (baseUrl) => {
+        const createResponse = await fetch(`${baseUrl}/issues`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(CREATE_ISSUE_REQUEST_BODY),
+        });
+        const createBody = await createResponse.json() as IssueEnvelope;
+
+        expect(createResponse.status).toBe(201);
+        expect(readIssueEnvelope(database, CREATED_ISSUE_ID)).toMatchObject({
+          issue: createBody.issue,
+          derived: createBody.derived,
+          revision: createBody.revision,
+          source: {
+            file_path: createBody.source.file_path,
+            indexed_at: expect.any(String),
+          },
+        });
+
+        const initialRevision = computeIssueRevision(
+          await readFile(store.getIssueFilePath(EXISTING_ISSUE.id), "utf8"),
+        );
+        const patchResponse = await fetch(`${baseUrl}/issues/${EXISTING_ISSUE.id}`, {
+          method: "PATCH",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            expectedRevision: initialRevision,
+            title: "Projection refreshed after patch",
+          }),
+        });
+        const patchBody = await patchResponse.json() as IssueEnvelope;
+
+        expect(patchResponse.status).toBe(200);
+        expect(readIssueEnvelope(database, EXISTING_ISSUE.id)).toMatchObject({
+          issue: patchBody.issue,
+          derived: patchBody.derived,
+          revision: patchBody.revision,
+          source: {
+            file_path: patchBody.source.file_path,
+            indexed_at: expect.any(String),
+          },
+        });
+
+        const projectedBeforeRejectedPatch = readIssueEnvelope(
+          database,
+          EXISTING_ISSUE.id,
+        );
+        const invalidPatchResponse = await fetch(`${baseUrl}/issues/${EXISTING_ISSUE.id}`, {
+          method: "PATCH",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            expectedRevision: patchBody.revision,
+            title: "",
+          }),
+        });
+
+        expect(invalidPatchResponse.status).toBe(422);
+        expect(readIssueEnvelope(database, EXISTING_ISSUE.id)).toEqual(
+          projectedBeforeRejectedPatch,
+        );
+      },
+      {
+        mutationHandlers: createFilesystemMutationRouteHandlers({
+          rootDirectory,
+          issueIdGenerator: () => CREATED_ISSUE_ID,
+          createNow: () => CREATE_TIMESTAMP,
+          patchNow: () => PATCH_TIMESTAMP,
+        }),
+      },
+    );
+  } finally {
+    database.close();
+  }
 });
 
 test("startServer serves GET /issues, GET /issues/:id, and GET /validation/errors from SQLite", async () => {
@@ -712,5 +804,195 @@ test("startServer serializes concurrent create and patch writes that share a rep
     });
   } finally {
     server.stop(true);
+  }
+});
+
+test("startServer does not expose POST /admin/rebuild-index when bound to a non-loopback hostname", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+  const server = startServer({
+    hostname: "0.0.0.0",
+    port: 0,
+    adminHandlers: createFilesystemAdminRouteHandlers({
+      rootDirectory,
+    }),
+  });
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${server.port}/admin/rebuild-index`, {
+      method: "POST",
+      headers: {
+        Host: "localhost",
+      },
+    });
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({
+      error: {
+        code: "route_not_found",
+        message: "No route matches the requested path.",
+      },
+    });
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("startServer serializes admin rebuild requests with accepted writes when they share the repository mutation lock", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+  const store = new FilesystemIssueStore({ rootDirectory });
+  const mutationLock = createFilesystemIssueMutationLock();
+  let releaseCreatePersist!: () => void;
+  const createPersistReleased = new Promise<void>((resolve) => {
+    releaseCreatePersist = resolve;
+  });
+  let markCreatePersistReached!: () => void;
+  const createPersistReached = new Promise<void>((resolve) => {
+    markCreatePersistReached = resolve;
+  });
+
+  await store.writeIssue(EXISTING_ISSUE);
+
+  const server = startServer({
+    port: 0,
+    adminHandlers: createFilesystemAdminRouteHandlers({
+      rootDirectory,
+      mutationLock,
+    }),
+    mutationHandlers: {
+      createIssue: createCreateIssueHandler(
+        createFilesystemCreateIssueMutationBoundary({
+          rootDirectory,
+          issueIdGenerator: () => CREATED_ISSUE_ID,
+          now: () => CREATE_TIMESTAMP,
+          mutationLock,
+          beforePersist: async () => {
+            markCreatePersistReached();
+            await createPersistReleased;
+          },
+        }),
+      ),
+      patchIssue: createPatchIssueHandler(
+        createFilesystemPatchIssueMutationBoundary({
+          rootDirectory,
+          now: () => PATCH_TIMESTAMP,
+          mutationLock,
+        }),
+      ),
+      transitionIssue: () => new Response("unused", { status: 500 }),
+    },
+  });
+
+  try {
+    const baseUrl = `http://127.0.0.1:${server.port}`;
+    const createResponsePromise = fetch(`${baseUrl}/issues`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(CREATE_ISSUE_REQUEST_BODY),
+    });
+
+    await createPersistReached;
+
+    let rebuildResolved = false;
+    const rebuildResponsePromise = fetch(`${baseUrl}/admin/rebuild-index`, {
+      method: "POST",
+    }).then((response) => {
+      rebuildResolved = true;
+      return response;
+    });
+
+    await Bun.sleep(25);
+    expect(rebuildResolved).toBe(false);
+
+    releaseCreatePersist();
+
+    const [createResponse, rebuildResponse] = await Promise.all([
+      createResponsePromise,
+      rebuildResponsePromise,
+    ]);
+
+    expect(createResponse.status).toBe(201);
+    expect(rebuildResponse.status).toBe(200);
+    expect(readIssueEnvelope(
+      openProjectionDatabase(join(rootDirectory, ".mis", "index.sqlite")),
+      CREATED_ISSUE_ID,
+    )).toMatchObject({
+      issue: {
+        id: CREATED_ISSUE_ID,
+      },
+    });
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("startServer rebuilds projection state from canonical Markdown via POST /admin/rebuild-index", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+  const store = new FilesystemIssueStore({ rootDirectory });
+  const database = openProjectionDatabase(join(rootDirectory, ".mis", "index.sqlite"));
+  const canonicalIssue: Issue = {
+    spec_version: "mis/0.1",
+    id: "ISSUE-9010",
+    title: "Canonical title wins the rebuild",
+    kind: "task",
+    status: "accepted",
+    created_at: "2026-04-20T09:00:00-05:00",
+    updated_at: "2026-04-20T09:15:00-05:00",
+    body: "## Objective\n\nRebuild from Markdown, not stale projection state.\n",
+  };
+
+  await store.writeIssue(canonicalIssue);
+  indexIssueEnvelope(database, {
+    issue: {
+      ...canonicalIssue,
+      id: "ISSUE-STALE",
+      title: "This row should be removed by rebuild",
+    },
+    derived: {
+      children_ids: [],
+      blocks_ids: [],
+      blocked_by_ids: [],
+      duplicates_ids: [],
+      ready: true,
+      is_blocked: false,
+    },
+    revision: "rev-stale",
+    source: {
+      file_path: "vault/issues/ISSUE-STALE.md",
+      indexed_at: "2026-04-20T09:20:00-05:00",
+    },
+  });
+
+  try {
+    await withServer(
+      rootDirectory,
+      async (baseUrl) => {
+        const response = await fetch(`${baseUrl}/admin/rebuild-index`, {
+          method: "POST",
+        });
+
+        expect(response.status).toBe(200);
+        expect(await response.json()).toEqual({
+          issue_count: 1,
+          failure_count: 0,
+          failures: [],
+        });
+        expect(readIssueEnvelope(database, canonicalIssue.id)).toMatchObject({
+          issue: canonicalIssue,
+          source: {
+            file_path: `vault/issues/${canonicalIssue.id}.md`,
+          },
+        });
+        expect(readIssueEnvelope(database, "ISSUE-STALE")).toBeNull();
+      },
+      {
+        adminHandlers: createFilesystemAdminRouteHandlers({
+          rootDirectory,
+        }),
+      },
+    );
+  } finally {
+    database.close();
   }
 });

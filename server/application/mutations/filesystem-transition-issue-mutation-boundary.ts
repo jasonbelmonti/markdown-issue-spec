@@ -3,9 +3,11 @@ import {
   type FilesystemIssueMutationLock,
   withFilesystemIssueMutationLock,
 } from "./filesystem-issue-mutation-lock.ts";
+import { completeAppliedIssueMutation } from "./complete-applied-issue-mutation.ts";
 import {
   loadTransitionIssueFilesystemState,
   persistTransitionedIssueAndBuildEnvelope,
+  rollbackTransitionedIssue,
 } from "./transition-issue-filesystem-state.ts";
 import { normalizeTransitionIssueInput } from "./normalize-transition-issue-input.ts";
 import { prepareTransitionIssueMutation } from "./prepare-transition-issue-mutation.ts";
@@ -21,6 +23,7 @@ export interface FilesystemTransitionIssueMutationBoundaryOptions {
   rootDirectory: string;
   now?: () => string;
   beforePersist?: () => Promise<void>;
+  afterPersist?: () => Promise<void>;
   mutationLock?: FilesystemIssueMutationLock;
 }
 
@@ -34,6 +37,7 @@ export function createFilesystemTransitionIssueMutationBoundary(
   const { rootDirectory } = options;
   const now = options.now ?? createTimestamp;
   const beforePersist = options.beforePersist;
+  const afterPersist = options.afterPersist;
   const mutationLock = options.mutationLock ?? createFilesystemIssueMutationLock();
 
   return {
@@ -63,19 +67,17 @@ export function createFilesystemTransitionIssueMutationBoundary(
 
             await beforePersist?.();
 
-            const envelope = await persistTransitionedIssueAndBuildEnvelope(
-              filesystemState,
-              rootDirectory,
-              preparedMutation.issue,
-              indexedAt,
-            );
-
-            return {
-              status: "applied",
-              issue: envelope.issue,
-              envelope,
-              revision: envelope.revision,
-            } as const;
+            return completeAppliedIssueMutation({
+              persist: () =>
+                persistTransitionedIssueAndBuildEnvelope(
+                  filesystemState,
+                  rootDirectory,
+                  preparedMutation.issue,
+                  indexedAt,
+                ),
+              rollback: () => rollbackTransitionedIssue(filesystemState),
+              afterPersist,
+            });
           },
         );
       } catch (error) {

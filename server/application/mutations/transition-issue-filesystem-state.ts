@@ -13,6 +13,11 @@ import {
 } from "../../startup/index.ts";
 import { FilesystemIssueStore } from "../../store/index.ts";
 import { UnsafeIssueIdError } from "../../store/issue-file-path.ts";
+import {
+  readCanonicalIssueSnapshot,
+  restoreCanonicalIssueSnapshot,
+  type CanonicalIssueSnapshot,
+} from "./canonical-issue-snapshot.ts";
 import { TransitionIssueNotFoundError } from "./transition-issue-not-found-error.ts";
 import {
   createTransitionIssueCanonicalValidationError,
@@ -24,6 +29,7 @@ import {
 export interface TransitionIssueFilesystemState {
   currentParsedIssue: ParsedStartupIssueFile;
   currentParsedIssues: ParsedStartupIssueFile[];
+  canonicalSnapshot: CanonicalIssueSnapshot;
   loadDependencyIssues: (nextStatus: "in_progress" | "completed") => Promise<Issue[]>;
   store: FilesystemIssueStore;
 }
@@ -261,6 +267,7 @@ export async function loadTransitionIssueFilesystemState(
   return {
     currentParsedIssue,
     currentParsedIssues: await loadParsedStartupIssues(rootDirectory, indexedAt),
+    canonicalSnapshot: await readCanonicalIssueSnapshot(filePath),
     loadDependencyIssues: (nextStatus) =>
       loadDependencyIssues(
         rootDirectory,
@@ -325,4 +332,10 @@ export async function persistTransitionedIssueAndBuildEnvelope(
   );
 
   return buildTransitionedIssueEnvelope(persistedIssue, state.currentParsedIssues);
+}
+
+export async function rollbackTransitionedIssue(
+  state: TransitionIssueFilesystemState,
+): Promise<void> {
+  await restoreCanonicalIssueSnapshot(state.canonicalSnapshot);
 }

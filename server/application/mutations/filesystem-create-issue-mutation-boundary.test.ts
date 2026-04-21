@@ -447,3 +447,18 @@ test("createFilesystemCreateIssueMutationBoundary rejects create id collisions w
     `${conflictingIssueId}.md`,
   ]);
 });
+
+test("createFilesystemCreateIssueMutationBoundary removes the created canonical file when post-persist rebuild fails", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+  const boundary = createCreateIssueBoundary(rootDirectory, {
+    issueIdGenerator: () => "ISSUE-00000000000000000000000012",
+    afterPersist: async () => {
+      throw new Error("projection rebuild failed");
+    },
+  });
+
+  await expect(boundary.createIssue(CREATE_ISSUE_COMMAND)).rejects.toThrow(
+    "projection rebuild failed",
+  );
+  expect(await readdir(join(rootDirectory, "vault", "issues"))).toEqual([]);
+});

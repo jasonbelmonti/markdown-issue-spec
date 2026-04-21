@@ -1,8 +1,10 @@
 import { parseCreateIssueCandidate } from "./create-issue-candidate.ts";
+import { completeAppliedIssueMutation } from "./complete-applied-issue-mutation.ts";
 import {
   getCreateIssueGraphValidationErrors,
   loadCreateIssueFilesystemState,
   persistCreatedIssueAndBuildEnvelope,
+  rollbackCreatedIssue,
 } from "./create-issue-filesystem-state.ts";
 import { createIssueId } from "./create-issue-id.ts";
 import {
@@ -24,6 +26,7 @@ export interface FilesystemCreateIssueMutationBoundaryOptions {
   issueIdGenerator?: () => string;
   now?: () => string;
   beforePersist?: () => Promise<void>;
+  afterPersist?: () => Promise<void>;
   mutationLock?: FilesystemIssueMutationLock;
 }
 
@@ -38,6 +41,7 @@ export function createFilesystemCreateIssueMutationBoundary(
   const issueIdGenerator = options.issueIdGenerator ?? createIssueId;
   const now = options.now ?? createTimestamp;
   const beforePersist = options.beforePersist;
+  const afterPersist = options.afterPersist;
   const mutationLock = options.mutationLock ?? createFilesystemIssueMutationLock();
 
   return {
@@ -67,19 +71,17 @@ export function createFilesystemCreateIssueMutationBoundary(
 
             await beforePersist?.();
 
-            const envelope = await persistCreatedIssueAndBuildEnvelope(
-              filesystemState,
-              rootDirectory,
-              issue,
-              indexedAt,
-            );
-
-            return {
-              status: "applied",
-              issue: envelope.issue,
-              envelope,
-              revision: envelope.revision,
-            } as const;
+            return completeAppliedIssueMutation({
+              persist: () =>
+                persistCreatedIssueAndBuildEnvelope(
+                  filesystemState,
+                  rootDirectory,
+                  issue,
+                  indexedAt,
+                ),
+              rollback: () => rollbackCreatedIssue(filesystemState),
+              afterPersist,
+            });
           },
         );
       } catch (error) {

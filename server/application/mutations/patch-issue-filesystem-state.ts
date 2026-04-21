@@ -14,6 +14,11 @@ import {
 } from "../../startup/index.ts";
 import { FilesystemIssueStore } from "../../store/index.ts";
 import { UnsafeIssueIdError } from "../../store/issue-file-path.ts";
+import {
+  readCanonicalIssueSnapshot,
+  restoreCanonicalIssueSnapshot,
+  type CanonicalIssueSnapshot,
+} from "./canonical-issue-snapshot.ts";
 import { PatchIssueNotFoundError } from "./patch-issue-not-found-error.ts";
 import {
   createPatchIssueCanonicalValidationError,
@@ -25,6 +30,7 @@ import {
 export interface PatchIssueFilesystemState {
   currentParsedIssue: ParsedStartupIssueFile;
   currentParsedIssues: ParsedStartupIssueFile[];
+  canonicalSnapshot: CanonicalIssueSnapshot;
   store: FilesystemIssueStore;
 }
 
@@ -126,6 +132,7 @@ export async function loadPatchIssueFilesystemState(
   return {
     currentParsedIssue,
     currentParsedIssues: await loadParsedStartupIssues(rootDirectory, indexedAt),
+    canonicalSnapshot: await readCanonicalIssueSnapshot(filePath),
     store,
   };
 }
@@ -201,4 +208,10 @@ export async function persistPatchedIssueAndBuildEnvelope(
   );
 
   return buildPatchedIssueEnvelope(persistedIssue, state.currentParsedIssues);
+}
+
+export async function rollbackPatchedIssue(
+  state: PatchIssueFilesystemState,
+): Promise<void> {
+  await restoreCanonicalIssueSnapshot(state.canonicalSnapshot);
 }

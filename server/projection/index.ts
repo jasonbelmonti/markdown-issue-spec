@@ -30,3 +30,7 @@ export {
   clearProjectionState,
   clearProjectionStateForFilePath,
 } from "./clear-projection-state.ts";
+export {
+  replaceProjectionState,
+  type ReplaceProjectionStateInput,
+} from "./replace-projection-state.ts";

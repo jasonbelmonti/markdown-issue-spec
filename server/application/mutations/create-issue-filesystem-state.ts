@@ -1,4 +1,4 @@
-import { access } from "node:fs/promises";
+import { access, rm } from "node:fs/promises";
 
 import type {
   Issue,
@@ -21,6 +21,7 @@ import {
 
 export interface CreateIssueFilesystemState {
   currentParsedIssues: ParsedStartupIssueFile[];
+  candidateAbsoluteFilePath: string;
   candidateFilePath: string;
   store: FilesystemIssueStore;
 }
@@ -100,6 +101,7 @@ export async function loadCreateIssueFilesystemState(
 
   return {
     currentParsedIssues: await loadParsedStartupIssues(rootDirectory, indexedAt),
+    candidateAbsoluteFilePath: candidateFilePath,
     candidateFilePath: toStartupRelativeFilePath(rootDirectory, candidateFilePath),
     store,
   };
@@ -163,4 +165,10 @@ export async function persistCreatedIssueAndBuildEnvelope(
   );
 
   return buildCreatedIssueEnvelope(persistedIssue, state.currentParsedIssues);
+}
+
+export async function rollbackCreatedIssue(
+  state: CreateIssueFilesystemState,
+): Promise<void> {
+  await rm(state.candidateAbsoluteFilePath, { force: true });
 }

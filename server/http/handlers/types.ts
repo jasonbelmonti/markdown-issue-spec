@@ -6,6 +6,10 @@ export interface MutationRouteHandlers {
   transitionIssue: HttpRouteHandler;
 }
 
+export interface AdminRouteHandlers {
+  rebuildIndex: HttpRouteHandler;
+}
+
 export interface QueryRouteHandlers {
   getIssue: HttpRouteHandler;
   listIssues: HttpRouteHandler;

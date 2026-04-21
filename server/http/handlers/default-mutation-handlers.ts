@@ -1,10 +1,9 @@
-import { handleCreateIssue } from "./create-issue-handler.ts";
-import { handlePatchIssue } from "./patch-issue-handler.ts";
-import { handleTransitionIssue } from "./transition-issue-handler.ts";
+import { defaultFilesystemIssueMutationLock } from "./default-filesystem-issue-mutation-lock.ts";
+import { createFilesystemMutationRouteHandlers } from "./filesystem-mutation-handlers.ts";
 import type { MutationRouteHandlers } from "./types.ts";
 
-export const defaultMutationHandlers: MutationRouteHandlers = {
-  createIssue: handleCreateIssue,
-  patchIssue: handlePatchIssue,
-  transitionIssue: handleTransitionIssue,
-};
+export const defaultMutationHandlers: MutationRouteHandlers =
+  createFilesystemMutationRouteHandlers({
+    rootDirectory: process.cwd(),
+    mutationLock: defaultFilesystemIssueMutationLock,
+  });

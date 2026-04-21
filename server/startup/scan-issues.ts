@@ -10,8 +10,7 @@ import {
   type GraphValidationIssue,
 } from "../core/validation/index.ts";
 import {
-  clearProjectionStateForFilePath,
-  writeProjectionState,
+  replaceProjectionState,
 } from "../projection/index.ts";
 import { listCanonicalIssueFiles } from "./issue-file-discovery.ts";
 import { scanIssueFile, toStartupRelativeFilePath } from "./scan-issue-file.ts";
@@ -66,29 +65,6 @@ function buildGraphValidationIssues(
     issue,
     file_path: source.file_path,
   }));
-}
-
-function listIndexedIssueFilePaths(database: Database): string[] {
-  return database
-    .query<{ file_path: string }, []>(
-      `SELECT file_path
-       FROM issues`,
-    )
-    .all()
-    .map(({ file_path: filePath }) => filePath);
-}
-
-function reconcileMissingProjectionFilePaths(
-  database: Database,
-  discoveredFilePaths: ReadonlySet<string>,
-): void {
-  for (const indexedFilePath of listIndexedIssueFilePaths(database)) {
-    if (discoveredFilePaths.has(indexedFilePath)) {
-      continue;
-    }
-
-    clearProjectionStateForFilePath(database, indexedFilePath);
-  }
 }
 
 interface DuplicateParsedIssueGroup {
@@ -167,11 +143,6 @@ export async function scanIssueFilesIntoProjection(
   const { database, rootDirectory } = options;
   const indexedAt = options.indexedAt ?? new Date().toISOString();
   const issueFilePaths = await listCanonicalIssueFiles(rootDirectory);
-  const discoveredFilePaths = new Set(
-    issueFilePaths.map((filePath) =>
-      toStartupRelativeFilePath(rootDirectory, filePath),
-    ),
-  );
   const parsedIssues: ParsedStartupIssueFile[] = [];
   const failures: StartupScanFailure[] = [];
 
@@ -186,7 +157,6 @@ export async function scanIssueFilesIntoProjection(
         indexedAt,
       });
     } catch (error) {
-      clearProjectionStateForFilePath(database, startupFilePath);
       failures.push({
         filePath: startupFilePath,
         message: toErrorMessage(error),
@@ -198,12 +168,6 @@ export async function scanIssueFilesIntoProjection(
 
   const duplicateRejection = rejectDuplicateParsedIssueIds(parsedIssues);
   failures.push(...duplicateRejection.failures);
-
-  for (const failure of duplicateRejection.failures) {
-    clearProjectionStateForFilePath(database, failure.filePath);
-  }
-
-  reconcileMissingProjectionFilePaths(database, discoveredFilePaths);
 
   const issuesById = new Map(
     duplicateRejection.acceptedParsedIssues.map(
@@ -224,13 +188,10 @@ export async function scanIssueFilesIntoProjection(
       ),
   );
 
-  for (const issueEnvelope of issueEnvelopes) {
-    writeProjectionState(database, {
-      issueEnvelope,
-      validationErrors:
-        validationErrorsByFilePath.get(issueEnvelope.source.file_path) ?? [],
-    });
-  }
+  replaceProjectionState(database, {
+    issueEnvelopes,
+    validationErrorsByFilePath,
+  });
 
   return {
     issueEnvelopes,

@@ -533,6 +533,31 @@ created_at: [unterminated
   expect(await readIssueSource(rootDirectory, EXISTING_ISSUE.id)).toBe(originalSource);
 });
 
+test("createFilesystemTransitionIssueMutationBoundary restores the canonical file when post-persist rebuild fails", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+  const boundary = createTransitionIssueBoundary(rootDirectory, {
+    now: () => TRANSITION_TIMESTAMP,
+    afterPersist: async () => {
+      throw new Error("projection rebuild failed");
+    },
+  });
+
+  await writeCanonicalIssue(rootDirectory);
+  const expectedRevision = await readIssueRevision(rootDirectory, EXISTING_ISSUE.id);
+  const originalSource = await readIssueSource(rootDirectory, EXISTING_ISSUE.id);
+
+  await expect(
+    boundary.transitionIssue({
+      ...TRANSITION_ISSUE_COMMAND,
+      input: {
+        expectedRevision,
+        to_status: "in_progress",
+      },
+    }),
+  ).rejects.toThrow("projection rebuild failed");
+  expect(await readIssueSource(rootDirectory, EXISTING_ISSUE.id)).toBe(originalSource);
+});
+
 test("createFilesystemTransitionIssueMutationBoundary ignores completed-only dependency validation when transitioning to in_progress", async () => {
   const rootDirectory = await createTemporaryRootDirectory();
   const boundary = createTransitionIssueBoundary(rootDirectory, {
