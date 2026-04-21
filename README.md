@@ -22,6 +22,11 @@ The default entrypoint listens on `http://127.0.0.1:3000` and uses the current
 working directory as the filesystem root for both `vault/issues/` and
 `.mis/index.sqlite`.
 
+For local testing or alternate process layouts, the entrypoint also accepts:
+
+- `MIS_HOSTNAME` to override the bind hostname
+- `MIS_PORT` to override the bind port, including `0` for an OS-assigned port
+
 If `vault/issues/` already contains canonical Markdown files, rebuild the
 projection after startup so query routes reflect that state:
 

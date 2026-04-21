@@ -61,6 +61,10 @@ async function createTemporaryRootDirectory(): Promise<string> {
 function spawnDefaultEntrypoint(rootDirectory: string): SpawnedServer {
   const serverProcess = spawn("bun", ["run", ENTRYPOINT_PATH], {
     cwd: rootDirectory,
+    env: {
+      ...process.env,
+      MIS_PORT: "0",
+    },
     stdio: "pipe",
   });
   const stdout: string[] = [];

@@ -45,6 +45,13 @@ Current default runtime behavior:
 - projection database: `<cwd>/.mis/index.sqlite`
 - admin rebuild route is only exposed when the server is bound to loopback
 
+Optional entrypoint overrides:
+
+- `MIS_HOSTNAME` overrides the bind hostname
+- `MIS_PORT` overrides the bind port
+- `MIS_PORT=0` asks the OS to assign a free port, which is useful for smoke
+  tests and parallel local runs
+
 The entrypoint starts the HTTP service, but it does not perform an implicit
 startup rebuild of pre-existing Markdown files. If `vault/issues/` already has
 issue files, run the rebuild route after startup before depending on query
