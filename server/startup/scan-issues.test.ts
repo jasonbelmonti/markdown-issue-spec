@@ -334,15 +334,14 @@ test("scanIssueFilesIntoProjection removes stale projection rows for files missi
   }
 });
 
-test("scanIssueFilesIntoProjection indexes files by canonical frontmatter id even when the filename differs", async () => {
+test("scanIssueFilesIntoProjection rejects files whose frontmatter id does not match the filename", async () => {
   const rootDirectory = await createTemporaryRootDirectory();
   const database = openMemoryProjectionDatabase();
-  const renamedIssueSource = replaceIssueId(ISSUE_0100_SOURCE, "ISSUE-9999");
 
   await writeIssueFile(
     rootDirectory,
-    "schema-foundation.md",
-    renamedIssueSource,
+    "ISSUE-0001.md",
+    replaceIssueId(ISSUE_0100_SOURCE, "ISSUE-9999"),
   );
 
   try {
@@ -352,20 +351,15 @@ test("scanIssueFilesIntoProjection indexes files by canonical frontmatter id eve
       indexedAt: FIXED_INDEXED_AT,
     });
 
-    expect(result.failures).toEqual([]);
-    expect(result.issueEnvelopes.map((envelope) => envelope.issue.id)).toEqual([
-      "ISSUE-9999",
-    ]);
-    expect(getIndexedIssueRows(database)).toEqual([
+    expect(result.issueEnvelopes).toEqual([]);
+    expect(result.failures).toEqual([
       {
-        issue_id: "ISSUE-9999",
-        file_path: "vault/issues/schema-foundation.md",
-        revision: createRevision(renamedIssueSource),
-        indexed_at: FIXED_INDEXED_AT,
-        ready: 1,
-        is_blocked: 0,
+        filePath: "vault/issues/ISSUE-0001.md",
+        message:
+          'Issue file for "ISSUE-0001" contained mismatched frontmatter id "ISSUE-9999".',
       },
     ]);
+    expect(getIndexedIssueRows(database)).toEqual([]);
   } finally {
     database.close();
   }

@@ -1,4 +1,4 @@
-import { relative, sep } from "node:path";
+import { basename, relative, sep } from "node:path";
 
 import { parseIssueMarkdown } from "../core/parser/index.ts";
 import type { Rfc3339Timestamp } from "../core/types/index.ts";
@@ -10,6 +10,10 @@ export function toStartupRelativeFilePath(
   filePath: string,
 ): string {
   return relative(rootDirectory, filePath).split(sep).join("/");
+}
+
+function getExpectedIssueId(filePath: string): string {
+  return basename(filePath, ".md");
 }
 
 export class ScanIssueFileIdMismatchError extends Error {
@@ -28,11 +32,9 @@ export class ScanIssueFileIdMismatchError extends Error {
   }
 }
 
-function assertMatchingIssueId(
-  filePath: string,
-  expectedIssueId: string,
-  actualIssueId: string,
-): void {
+function assertMatchingIssueId(filePath: string, actualIssueId: string): void {
+  const expectedIssueId = getExpectedIssueId(filePath);
+
   if (actualIssueId !== expectedIssueId) {
     throw new ScanIssueFileIdMismatchError(
       filePath,
@@ -46,7 +48,6 @@ export interface ScanIssueFileOptions {
   rootDirectory: string;
   filePath: string;
   indexedAt: Rfc3339Timestamp;
-  expectedIssueId?: string;
 }
 
 export async function scanIssueFile(
@@ -55,13 +56,7 @@ export async function scanIssueFile(
   const source = await Bun.file(options.filePath).text();
   const issue = parseIssueMarkdown(source);
 
-  if (options.expectedIssueId !== undefined) {
-    assertMatchingIssueId(
-      options.filePath,
-      options.expectedIssueId,
-      issue.id,
-    );
-  }
+  assertMatchingIssueId(options.filePath, issue.id);
 
   return {
     issue,
