@@ -21,3 +21,23 @@ test("createRebuildIndexHandler returns rebuild results as deterministic JSON", 
     failures: [],
   });
 });
+
+test("createRebuildIndexHandler normalizes unexpected rebuild failures to the standard api error shape", async () => {
+  const handler = createRebuildIndexHandler(async () => {
+    throw new Error("kaboom");
+  });
+
+  const response = await handler(
+    new Request("http://example.com/admin/rebuild-index", {
+      method: "POST",
+    }),
+  );
+
+  expect(response.status).toBe(500);
+  expect(await response.json()).toEqual({
+    error: {
+      code: "internal_server_error",
+      message: "The server failed to process the request.",
+    },
+  });
+});

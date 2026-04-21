@@ -10,6 +10,7 @@ import type {
 } from "./handlers/types.ts";
 import type { HttpRouteDefinition } from "./route-contract.ts";
 import { createAdminRouteDefinitions } from "./routes/admin-routes.ts";
+import { isLoopbackHostname } from "./loopback-hostname.ts";
 import { createMutationRouteDefinitions } from "./routes/mutation-routes.ts";
 import { createQueryRouteDefinitions } from "./routes/query-routes.ts";
 
@@ -23,15 +24,6 @@ export interface HttpServerOptions {
 
 const DEFAULT_HOSTNAME = "127.0.0.1";
 const DEFAULT_PORT = 3000;
-
-function isLoopbackHostname(hostname: string): boolean {
-  return (
-    hostname === "127.0.0.1" ||
-    hostname === "localhost" ||
-    hostname === "::1" ||
-    hostname === "[::1]"
-  );
-}
 
 function createNotFoundResponse(): Response {
   return createApiErrorResponse(
