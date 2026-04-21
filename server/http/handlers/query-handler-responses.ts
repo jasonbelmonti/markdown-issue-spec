@@ -1,16 +1,8 @@
 import {
   createApiError,
-  type ApiErrorDetails,
 } from "../errors/api-error.ts";
 import { createApiErrorResponse } from "../errors/error-response.ts";
-
-export interface QueryRequestValidationError {
-  code: string;
-  source: "request";
-  path: string;
-  message: string;
-  details?: ApiErrorDetails;
-}
+import type { QueryRequestValidationError } from "./query-request-validation-error.ts";
 
 export interface QueryValidationErrorResponseOptions {
   code: string;
@@ -23,7 +15,7 @@ export function createQueryValidationErrorResponse(
 ): Response {
   return createApiErrorResponse(
     createApiError({
-      status: 422,
+      status: 400,
       code: options.code,
       message: options.message,
       details: {

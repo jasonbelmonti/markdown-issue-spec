@@ -11,15 +11,17 @@ test("createQueryValidationErrorResponse returns deterministic invalid-query jso
         code: "query.invalid_limit",
         source: "request",
         path: "/limit",
-        message: "Query parameter `limit` must be a positive integer.",
+        message:
+          "Query parameter `limit` must be a positive integer not exceeding 100.",
         details: {
           limit: "zero",
+          maxLimit: 100,
         },
       },
     ],
   });
 
-  expect(response.status).toBe(422);
+  expect(response.status).toBe(400);
   expect(await response.json()).toEqual({
     error: {
       code: "issue_list_validation_failed",
@@ -30,9 +32,11 @@ test("createQueryValidationErrorResponse returns deterministic invalid-query jso
             code: "query.invalid_limit",
             source: "request",
             path: "/limit",
-            message: "Query parameter `limit` must be a positive integer.",
+            message:
+              "Query parameter `limit` must be a positive integer not exceeding 100.",
             details: {
               limit: "zero",
+              maxLimit: 100,
             },
           },
         ],

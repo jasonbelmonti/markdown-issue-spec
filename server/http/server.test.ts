@@ -9,6 +9,7 @@ import { createFilesystemPatchIssueMutationBoundary } from "../application/mutat
 import type { Issue, IssueEnvelope } from "../core/types/index.ts";
 import {
   indexIssueEnvelope,
+  listIssueEnvelopes,
   openProjectionDatabase,
   readIssueEnvelope,
 } from "../projection/index.ts";
@@ -17,6 +18,8 @@ import { computeIssueRevision } from "../store/issue-revision.ts";
 import { createCreateIssueHandler } from "./handlers/create-issue-handler.ts";
 import { defaultQueryHandlers } from "./handlers/default-query-handlers.ts";
 import { createGetIssueHandler } from "./handlers/get-issue-handler.ts";
+import { createGetIssueListHandler } from "./handlers/get-issue-list-handler.ts";
+import { MAX_ISSUE_LIST_LIMIT } from "./handlers/list-issues-query-params.ts";
 import { createPatchIssueHandler } from "./handlers/patch-issue-handler.ts";
 import type { QueryRouteHandlers } from "./handlers/types.ts";
 import { startServer } from "./server.ts";
@@ -73,6 +76,84 @@ const PROJECTED_ISSUE_ENVELOPE: IssueEnvelope = {
     indexed_at: "2026-04-19T10:20:00-05:00",
   },
 };
+
+interface ProjectedAcceptedIssueInput {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt?: string;
+  kind?: string;
+  labels?: string[];
+  assignees?: string[];
+  ready?: boolean;
+  isBlocked?: boolean;
+  blockedByIds?: string[];
+}
+
+function createProjectedAcceptedIssueEnvelope(
+  input: ProjectedAcceptedIssueInput,
+): IssueEnvelope {
+  return {
+    issue: {
+      spec_version: "mis/0.1",
+      id: input.id,
+      title: input.title,
+      kind: input.kind ?? "task",
+      status: "accepted",
+      created_at: input.createdAt,
+      ...(input.updatedAt === undefined ? {} : { updated_at: input.updatedAt }),
+      ...(input.labels === undefined ? {} : { labels: input.labels }),
+      ...(input.assignees === undefined ? {} : { assignees: input.assignees }),
+      body: `## Objective\n\n${input.title}\n`,
+    },
+    derived: {
+      children_ids: [],
+      blocks_ids: [],
+      blocked_by_ids: input.blockedByIds ?? [],
+      duplicates_ids: [],
+      ready: input.ready ?? true,
+      is_blocked: input.isBlocked ?? false,
+    },
+    revision: `rev-${input.id.toLowerCase()}`,
+    source: {
+      file_path: `vault/issues/${input.id}.md`,
+      indexed_at: input.updatedAt ?? input.createdAt,
+    },
+  };
+}
+
+const PROJECTED_LIST_ISSUE_ENVELOPES = [
+  createProjectedAcceptedIssueEnvelope({
+    id: "ISSUE-3000",
+    title: "Backend issue with an open blocker",
+    createdAt: "2026-04-19T12:00:00-05:00",
+    updatedAt: "2026-04-19T12:05:00-05:00",
+    labels: ["backend"],
+    assignees: ["alex"],
+    ready: false,
+    isBlocked: true,
+    blockedByIds: ["ISSUE-BLOCKER-OPEN"],
+  }),
+  createProjectedAcceptedIssueEnvelope({
+    id: "ISSUE-3001",
+    title: "Backend issue that is ready",
+    createdAt: "2026-04-19T12:10:00-05:00",
+    updatedAt: "2026-04-19T12:20:00-05:00",
+    kind: "bug",
+    labels: ["backend", "api"],
+    assignees: ["alex"],
+    ready: true,
+  }),
+  createProjectedAcceptedIssueEnvelope({
+    id: "ISSUE-3002",
+    title: "Newest backend issue that is ready",
+    createdAt: "2026-04-19T12:30:00-05:00",
+    updatedAt: "2026-04-19T12:40:00-05:00",
+    labels: ["backend"],
+    assignees: ["alex"],
+    ready: true,
+  }),
+] as const;
 
 async function createTemporaryRootDirectory(): Promise<string> {
   return mkdtemp(join(tmpdir(), "markdown-issue-server-"));
@@ -233,34 +314,48 @@ test("startServer serves real create and patch outcomes", async () => {
   });
 });
 
-test("startServer serves GET /issues/:id from SQLite while other query routes stay on placeholders", async () => {
+test("startServer serves GET /issues and GET /issues/:id from SQLite while GET /validation/errors stays stubbed", async () => {
   const rootDirectory = await createTemporaryRootDirectory();
   const database = openProjectionDatabase(join(rootDirectory, ".mis", "index.sqlite"));
   const queryHandlers: QueryRouteHandlers = {
     ...defaultQueryHandlers,
     getIssue: createGetIssueHandler((issueId) => readIssueEnvelope(database, issueId)),
+    listIssues: createGetIssueListHandler((query) => listIssueEnvelopes(database, query)),
   };
 
   try {
     indexIssueEnvelope(database, PROJECTED_ISSUE_ENVELOPE);
+    for (const envelope of PROJECTED_LIST_ISSUE_ENVELOPES) {
+      indexIssueEnvelope(database, envelope);
+    }
 
     await withServer(rootDirectory, async (baseUrl) => {
       const getIssueResponse = await fetch(
         `${baseUrl}/issues/${PROJECTED_ISSUE_ENVELOPE.issue.id}`,
       );
       const missingIssueResponse = await fetch(`${baseUrl}/issues/ISSUE-4040`);
-      const notImplementedQueryExpectations = [
-        {
-          pathname: "/issues",
-          code: "issue_list_not_implemented",
-          endpoint: "GET /issues",
-        },
-        {
-          pathname: "/validation/errors",
-          code: "validation_error_list_not_implemented",
-          endpoint: "GET /validation/errors",
-        },
-      ] as const;
+      const firstListResponse = await fetch(
+        `${baseUrl}/issues?status=accepted&label=backend&ready=true&limit=1`,
+      );
+      const firstListBody = await firstListResponse.json() as {
+        items: IssueEnvelope[];
+        next_cursor?: string;
+      };
+      const firstPageCursor = firstListBody.next_cursor;
+      const secondListResponse = await fetch(
+        `${baseUrl}/issues?status=accepted&label=backend&ready=true&limit=1&cursor=${firstPageCursor}`,
+      );
+      const emptyListResponse = await fetch(
+        `${baseUrl}/issues?status=canceled&limit=5`,
+      );
+      const invalidQueryResponses = await Promise.all([
+        fetch(`${baseUrl}/issues?limit=0`),
+        fetch(`${baseUrl}/issues?limit=${MAX_ISSUE_LIST_LIMIT + 1}`),
+        fetch(`${baseUrl}/issues?ready=maybe`),
+        fetch(`${baseUrl}/issues?status=accepted&status=completed`),
+        fetch(`${baseUrl}/issues?cursor=bad!`),
+      ]);
+      const validationErrorsResponse = await fetch(`${baseUrl}/validation/errors`);
 
       expect(getIssueResponse.status).toBe(200);
       expect(await getIssueResponse.json()).toEqual(PROJECTED_ISSUE_ENVELOPE);
@@ -276,20 +371,143 @@ test("startServer serves GET /issues/:id from SQLite while other query routes st
         },
       });
 
-      for (const expectation of notImplementedQueryExpectations) {
-        const response = await fetch(`${baseUrl}${expectation.pathname}`);
+      expect(firstListResponse.status).toBe(200);
+      expect(firstListBody).toEqual({
+        items: [PROJECTED_LIST_ISSUE_ENVELOPES[2]],
+        next_cursor: expect.any(String),
+      });
+      expect(firstPageCursor).toEqual(expect.any(String));
 
-        expect(response.status).toBe(501);
-        expect(await response.json()).toEqual({
-          error: {
-            code: expectation.code,
-            message: `${expectation.endpoint} is not implemented yet.`,
-            details: {
-              endpoint: expectation.endpoint,
-            },
+      expect(secondListResponse.status).toBe(200);
+      expect(await secondListResponse.json()).toEqual({
+        items: [PROJECTED_LIST_ISSUE_ENVELOPES[1]],
+      });
+
+      expect(emptyListResponse.status).toBe(200);
+      expect(await emptyListResponse.json()).toEqual({
+        items: [],
+      });
+
+      expect(invalidQueryResponses).toHaveLength(5);
+      expect(invalidQueryResponses[0]?.status).toBe(400);
+      expect(await invalidQueryResponses[0]?.json()).toEqual({
+        error: {
+          code: "issue_list_validation_failed",
+          message: "Issue list validation failed.",
+          details: {
+            errors: [
+              {
+                code: "query.invalid_limit",
+                source: "request",
+                path: "/limit",
+                message:
+                  `Query parameter \`limit\` must be a positive integer not exceeding ${MAX_ISSUE_LIST_LIMIT}.`,
+                details: {
+                  limit: "0",
+                  maxLimit: MAX_ISSUE_LIST_LIMIT,
+                },
+              },
+            ],
           },
-        });
-      }
+        },
+      });
+
+      expect(invalidQueryResponses[1]?.status).toBe(400);
+      expect(await invalidQueryResponses[1]?.json()).toEqual({
+        error: {
+          code: "issue_list_validation_failed",
+          message: "Issue list validation failed.",
+          details: {
+            errors: [
+              {
+                code: "query.invalid_limit",
+                source: "request",
+                path: "/limit",
+                message:
+                  `Query parameter \`limit\` must be a positive integer not exceeding ${MAX_ISSUE_LIST_LIMIT}.`,
+                details: {
+                  limit: String(MAX_ISSUE_LIST_LIMIT + 1),
+                  maxLimit: MAX_ISSUE_LIST_LIMIT,
+                },
+              },
+            ],
+          },
+        },
+      });
+
+      expect(invalidQueryResponses[2]?.status).toBe(400);
+      expect(await invalidQueryResponses[2]?.json()).toEqual({
+        error: {
+          code: "issue_list_validation_failed",
+          message: "Issue list validation failed.",
+          details: {
+            errors: [
+              {
+                code: "query.invalid_ready",
+                source: "request",
+                path: "/ready",
+                message: "Query parameter `ready` must be `true` or `false`.",
+                details: {
+                  ready: "maybe",
+                },
+              },
+            ],
+          },
+        },
+      });
+
+      expect(invalidQueryResponses[3]?.status).toBe(400);
+      expect(await invalidQueryResponses[3]?.json()).toEqual({
+        error: {
+          code: "issue_list_validation_failed",
+          message: "Issue list validation failed.",
+          details: {
+            errors: [
+              {
+                code: "query.repeated_parameter",
+                source: "request",
+                path: "/status",
+                message: "Query parameter `status` must not be repeated.",
+                details: {
+                  parameter: "status",
+                },
+              },
+            ],
+          },
+        },
+      });
+
+      expect(invalidQueryResponses[4]?.status).toBe(400);
+      expect(await invalidQueryResponses[4]?.json()).toEqual({
+        error: {
+          code: "issue_list_validation_failed",
+          message: "Issue list validation failed.",
+          details: {
+            errors: [
+              {
+                code: "query.invalid_cursor",
+                source: "request",
+                path: "/cursor",
+                message: "Query parameter `cursor` is invalid.",
+                details: {
+                  cursor: "bad!",
+                },
+              },
+            ],
+          },
+        },
+      });
+
+      expect(validationErrorsResponse.status).toBe(501);
+      expect(await validationErrorsResponse.json()).toEqual({
+        error: {
+          code: "validation_error_list_not_implemented",
+          message: "GET /validation/errors is not implemented yet.",
+          details: {
+            endpoint: "GET /validation/errors",
+          },
+        },
+      });
     }, { queryHandlers });
   } finally {
     database.close();
