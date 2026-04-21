@@ -6,6 +6,11 @@ test("isLoopbackHostname recognizes localhost and IPv6 loopback forms", () => {
   expect(isLoopbackHostname("localhost")).toBe(true);
   expect(isLoopbackHostname("::1")).toBe(true);
   expect(isLoopbackHostname("[::1]")).toBe(true);
+  expect(isLoopbackHostname("0:0:0:0:0:0:0:1")).toBe(true);
+  expect(isLoopbackHostname("[0:0:0:0:0:0:0:1]")).toBe(true);
+  expect(isLoopbackHostname("0000:0000:0000:0000:0000:0000:0000:0001")).toBe(
+    true,
+  );
 });
 
 test("isLoopbackHostname recognizes all 127/8 IPv4 loopback addresses", () => {
