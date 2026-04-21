@@ -33,6 +33,14 @@ interface SpawnedServer {
   stderr: string[];
 }
 
+function getExitPromise(server: SpawnedServer): Promise<void> {
+  if (server.process.exitCode !== null) {
+    return Promise.resolve();
+  }
+
+  return once(server.process, "exit").then(() => undefined);
+}
+
 function formatServerOutput(server: SpawnedServer): string {
   return [
     `stdout:\n${server.stdout.join("")}`,
@@ -105,18 +113,20 @@ async function stopServer(server: SpawnedServer): Promise<void> {
     return;
   }
 
+  const exitPromise = getExitPromise(server);
+
   server.process.kill("SIGTERM");
 
   try {
     await Promise.race([
-      once(server.process, "exit"),
+      exitPromise,
       sleep(SERVER_SHUTDOWN_TIMEOUT_MS).then(() => {
         throw new Error("Timed out waiting for the startup smoke test server to exit.");
       }),
     ]);
   } catch {
     server.process.kill("SIGKILL");
-    await once(server.process, "exit");
+    await exitPromise;
   }
 }
 
