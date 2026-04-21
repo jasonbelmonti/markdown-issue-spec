@@ -6,10 +6,12 @@ import { join } from "node:path";
 import { createFilesystemCreateIssueMutationBoundary } from "../application/mutations/filesystem-create-issue-mutation-boundary.ts";
 import { createFilesystemIssueMutationLock } from "../application/mutations/filesystem-issue-mutation-lock.ts";
 import { createFilesystemPatchIssueMutationBoundary } from "../application/mutations/filesystem-patch-issue-mutation-boundary.ts";
-import type { Issue, IssueEnvelope } from "../core/types/index.ts";
+import type { Issue, IssueEnvelope, ValidationError } from "../core/types/index.ts";
 import {
   indexIssueEnvelope,
+  indexValidationErrors,
   listIssueEnvelopes,
+  listValidationErrors,
   openProjectionDatabase,
   readIssueEnvelope,
 } from "../projection/index.ts";
@@ -19,10 +21,16 @@ import { createCreateIssueHandler } from "./handlers/create-issue-handler.ts";
 import { defaultQueryHandlers } from "./handlers/default-query-handlers.ts";
 import { createGetIssueHandler } from "./handlers/get-issue-handler.ts";
 import { createGetIssueListHandler } from "./handlers/get-issue-list-handler.ts";
+import { createGetValidationErrorListHandler } from "./handlers/get-validation-error-list-handler.ts";
 import { MAX_ISSUE_LIST_LIMIT } from "./handlers/list-issues-query-params.ts";
 import { createPatchIssueHandler } from "./handlers/patch-issue-handler.ts";
 import type { QueryRouteHandlers } from "./handlers/types.ts";
 import { startServer } from "./server.ts";
+import {
+  indexProjectedValidationErrors,
+  ISSUE_1000_SCHEMA_REQUIRED_VALIDATION_ERROR,
+  PROJECTED_VALIDATION_ERRORS,
+} from "./validation-error-test-fixtures.ts";
 
 const CREATE_TIMESTAMP = "2026-04-16T20:59:00-05:00";
 const CREATED_ISSUE_ID = "ISSUE-00000000000000000000000012";
@@ -314,13 +322,16 @@ test("startServer serves real create and patch outcomes", async () => {
   });
 });
 
-test("startServer serves GET /issues and GET /issues/:id from SQLite while GET /validation/errors stays stubbed", async () => {
+test("startServer serves GET /issues, GET /issues/:id, and GET /validation/errors from SQLite", async () => {
   const rootDirectory = await createTemporaryRootDirectory();
   const database = openProjectionDatabase(join(rootDirectory, ".mis", "index.sqlite"));
   const queryHandlers: QueryRouteHandlers = {
     ...defaultQueryHandlers,
     getIssue: createGetIssueHandler((issueId) => readIssueEnvelope(database, issueId)),
     listIssues: createGetIssueListHandler((query) => listIssueEnvelopes(database, query)),
+    listValidationErrors: createGetValidationErrorListHandler((query) =>
+      listValidationErrors(database, query)
+    ),
   };
 
   try {
@@ -328,6 +339,7 @@ test("startServer serves GET /issues and GET /issues/:id from SQLite while GET /
     for (const envelope of PROJECTED_LIST_ISSUE_ENVELOPES) {
       indexIssueEnvelope(database, envelope);
     }
+    indexProjectedValidationErrors(database);
 
     await withServer(rootDirectory, async (baseUrl) => {
       const getIssueResponse = await fetch(
@@ -356,6 +368,15 @@ test("startServer serves GET /issues and GET /issues/:id from SQLite while GET /
         fetch(`${baseUrl}/issues?cursor=bad!`),
       ]);
       const validationErrorsResponse = await fetch(`${baseUrl}/validation/errors`);
+      const filteredValidationErrorsResponse = await fetch(
+        `${baseUrl}/validation/errors?issue_id=ISSUE-1000&severity=error&code=schema.required`,
+      );
+      const invalidValidationErrorsResponse = await fetch(
+        `${baseUrl}/validation/errors?severity=fatal`,
+      );
+      const emptyValidationErrorsResponse = await fetch(
+        `${baseUrl}/validation/errors?issue_id=ISSUE-4040`,
+      );
 
       expect(getIssueResponse.status).toBe(200);
       expect(await getIssueResponse.json()).toEqual(PROJECTED_ISSUE_ENVELOPE);
@@ -498,15 +519,41 @@ test("startServer serves GET /issues and GET /issues/:id from SQLite while GET /
         },
       });
 
-      expect(validationErrorsResponse.status).toBe(501);
+      expect(validationErrorsResponse.status).toBe(200);
       expect(await validationErrorsResponse.json()).toEqual({
+        items: PROJECTED_VALIDATION_ERRORS,
+      });
+
+      expect(filteredValidationErrorsResponse.status).toBe(200);
+      expect(await filteredValidationErrorsResponse.json()).toEqual({
+        items: [ISSUE_1000_SCHEMA_REQUIRED_VALIDATION_ERROR],
+      });
+
+      expect(invalidValidationErrorsResponse.status).toBe(400);
+      expect(await invalidValidationErrorsResponse.json()).toEqual({
         error: {
-          code: "validation_error_list_not_implemented",
-          message: "GET /validation/errors is not implemented yet.",
+          code: "validation_error_list_validation_failed",
+          message: "Validation error list validation failed.",
           details: {
-            endpoint: "GET /validation/errors",
+            errors: [
+              {
+                code: "query.invalid_severity",
+                source: "request",
+                path: "/severity",
+                message:
+                  "Query parameter `severity` must be one of `error` or `warning`.",
+                details: {
+                  severity: "fatal",
+                },
+              },
+            ],
           },
         },
+      });
+
+      expect(emptyValidationErrorsResponse.status).toBe(200);
+      expect(await emptyValidationErrorsResponse.json()).toEqual({
+        items: [],
       });
     }, { queryHandlers });
   } finally {
