@@ -63,6 +63,7 @@ function spawnDefaultEntrypoint(rootDirectory: string): SpawnedServer {
     cwd: rootDirectory,
     env: {
       ...process.env,
+      MIS_HOSTNAME: "127.0.0.1",
       MIS_PORT: "0",
     },
     stdio: "pipe",
