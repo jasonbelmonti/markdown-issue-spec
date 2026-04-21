@@ -8,10 +8,10 @@ import type {
 import { validateIssueGraph } from "../../core/validation/index.ts";
 import {
   buildStartupIssueEnvelope,
-  listCanonicalIssueFiles,
+  loadAcceptedParsedIssues,
   scanIssueFile,
-  toStartupRelativeFilePath,
   type ParsedStartupIssueFile,
+  toStartupRelativeFilePath,
 } from "../../startup/index.ts";
 import { FilesystemIssueStore } from "../../store/index.ts";
 import {
@@ -30,20 +30,12 @@ async function loadParsedStartupIssues(
   rootDirectory: string,
   indexedAt: string,
 ): Promise<ParsedStartupIssueFile[]> {
-  const issueFilePaths = await listCanonicalIssueFiles(rootDirectory);
-  const parsedIssues = await Promise.all(
-    issueFilePaths.map((filePath) =>
-      scanIssueFile({
-        rootDirectory,
-        filePath,
-        indexedAt,
-      }).catch(() => null),
-    ),
-  );
+  const { acceptedParsedIssues } = await loadAcceptedParsedIssues({
+    rootDirectory,
+    indexedAt,
+  });
 
-  return parsedIssues.filter(
-    (parsedIssue): parsedIssue is ParsedStartupIssueFile => parsedIssue !== null,
-  );
+  return acceptedParsedIssues;
 }
 
 function isMissingFileError(error: unknown): error is NodeJS.ErrnoException {

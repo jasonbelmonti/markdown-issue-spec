@@ -12,21 +12,14 @@ import {
 import {
   replaceProjectionState,
 } from "../projection/index.ts";
-import { listCanonicalIssueFiles } from "./issue-file-discovery.ts";
-import { scanIssueFile, toStartupRelativeFilePath } from "./scan-issue-file.ts";
+import {
+  loadAcceptedParsedIssues,
+  type StartupScanFailure,
+} from "./accepted-parsed-issues.ts";
 import {
   buildStartupIssueEnvelope,
   type ParsedStartupIssueFile,
 } from "./startup-envelope.ts";
-
-function toErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-export interface StartupScanFailure {
-  filePath: string;
-  message: string;
-}
 
 export interface StartupScanResult {
   issueEnvelopes: IssueEnvelope[];
@@ -67,123 +60,34 @@ function buildGraphValidationIssues(
   }));
 }
 
-interface DuplicateParsedIssueGroup {
-  issueId: string;
-  parsedIssues: ParsedStartupIssueFile[];
-}
-
-function findDuplicateParsedIssueGroups(
-  parsedIssues: readonly ParsedStartupIssueFile[],
-): DuplicateParsedIssueGroup[] {
-  const parsedIssuesById = new Map<string, ParsedStartupIssueFile[]>();
-
-  for (const parsedIssue of parsedIssues) {
-    const existingIssues = parsedIssuesById.get(parsedIssue.issue.id) ?? [];
-
-    existingIssues.push(parsedIssue);
-    parsedIssuesById.set(parsedIssue.issue.id, existingIssues);
-  }
-
-  return Array.from(parsedIssuesById.entries())
-    .filter(([, group]) => group.length > 1)
-    .map(([issueId, group]) => ({
-      issueId,
-      parsedIssues: group,
-    }))
-    .sort((left, right) => left.issueId.localeCompare(right.issueId));
-}
-
-export function rejectDuplicateParsedIssueIds(
-  parsedIssues: readonly ParsedStartupIssueFile[],
-): {
-  acceptedParsedIssues: ParsedStartupIssueFile[];
-  failures: StartupScanFailure[];
-} {
-  const duplicateGroups = findDuplicateParsedIssueGroups(parsedIssues);
-
-  if (duplicateGroups.length === 0) {
-    return {
-      acceptedParsedIssues: [...parsedIssues],
-      failures: [],
-    };
-  }
-
-  const duplicateFilePaths = new Set<string>();
-  const failures: StartupScanFailure[] = [];
-
-  for (const duplicateGroup of duplicateGroups) {
-    const duplicatePaths = duplicateGroup.parsedIssues.map(
-      (parsedIssue) => parsedIssue.source.file_path,
-    );
-    const message = [
-      `Discovered duplicate issue id "${duplicateGroup.issueId}" in multiple files:`,
-      ...duplicatePaths.map((path) => `- ${path}`),
-    ].join("\n");
-
-    for (const duplicatePath of duplicatePaths) {
-      duplicateFilePaths.add(duplicatePath);
-      failures.push({
-        filePath: duplicatePath,
-        message,
-      });
-    }
-  }
-
-  return {
-    acceptedParsedIssues: parsedIssues.filter(
-      (parsedIssue) => !duplicateFilePaths.has(parsedIssue.source.file_path),
-    ),
-    failures,
-  };
-}
-
 export async function scanIssueFilesIntoProjection(
   options: ScanIssuesIntoProjectionOptions,
 ): Promise<StartupScanResult> {
   const { database, rootDirectory } = options;
   const indexedAt = options.indexedAt ?? new Date().toISOString();
-  const issueFilePaths = await listCanonicalIssueFiles(rootDirectory);
-  const parsedIssues: ParsedStartupIssueFile[] = [];
-  const failures: StartupScanFailure[] = [];
-
-  for (const filePath of issueFilePaths) {
-    const startupFilePath = toStartupRelativeFilePath(rootDirectory, filePath);
-    let parsedIssue: ParsedStartupIssueFile;
-
-    try {
-      parsedIssue = await scanIssueFile({
-        rootDirectory,
-        filePath,
-        indexedAt,
-      });
-    } catch (error) {
-      failures.push({
-        filePath: startupFilePath,
-        message: toErrorMessage(error),
-      });
-      continue;
-    }
-    parsedIssues.push(parsedIssue);
-  }
-
-  const duplicateRejection = rejectDuplicateParsedIssueIds(parsedIssues);
-  failures.push(...duplicateRejection.failures);
+  const {
+    acceptedParsedIssues,
+    failures,
+  } = await loadAcceptedParsedIssues({
+    rootDirectory,
+    indexedAt,
+  });
 
   const issuesById = new Map(
-    duplicateRejection.acceptedParsedIssues.map(
+    acceptedParsedIssues.map(
       ({ issue }) => [issue.id, issue] as const,
     ),
   );
   const validationErrorsByFilePath = groupValidationErrorsByFilePath(
     validateIssueGraph(
-      buildGraphValidationIssues(duplicateRejection.acceptedParsedIssues),
+      buildGraphValidationIssues(acceptedParsedIssues),
     ),
   );
-  const issueEnvelopes = duplicateRejection.acceptedParsedIssues.map(
+  const issueEnvelopes = acceptedParsedIssues.map(
     (parsedIssue) =>
       buildStartupIssueEnvelope(
         parsedIssue,
-        duplicateRejection.acceptedParsedIssues,
+        acceptedParsedIssues,
         issuesById,
       ),
   );

@@ -1,4 +1,4 @@
-import { basename, relative, sep } from "node:path";
+import { relative, sep } from "node:path";
 
 import { parseIssueMarkdown } from "../core/parser/index.ts";
 import type { Rfc3339Timestamp } from "../core/types/index.ts";
@@ -10,10 +10,6 @@ export function toStartupRelativeFilePath(
   filePath: string,
 ): string {
   return relative(rootDirectory, filePath).split(sep).join("/");
-}
-
-function getExpectedIssueId(filePath: string): string {
-  return basename(filePath, ".md");
 }
 
 export class ScanIssueFileIdMismatchError extends Error {
@@ -59,17 +55,17 @@ export interface ParseTargetedIssueFileOptions {
   expectedIssueId: string;
 }
 
-export async function parseTargetedIssueFile(
-  options: ParseTargetedIssueFileOptions,
+export interface ParseDiscoveredIssueFileOptions {
+  filePath: string;
+  startupRelativeFilePath: string;
+  indexedAt: Rfc3339Timestamp;
+}
+
+export async function parseDiscoveredIssueFile(
+  options: ParseDiscoveredIssueFileOptions,
 ): Promise<ParsedStartupIssueFile> {
   const source = await Bun.file(options.filePath).text();
   const issue = parseIssueMarkdown(source);
-
-  assertMatchingIssueId(
-    options.filePath,
-    options.expectedIssueId,
-    issue.id,
-  );
 
   return {
     issue,
@@ -81,16 +77,29 @@ export async function parseTargetedIssueFile(
   };
 }
 
+export async function parseTargetedIssueFile(
+  options: ParseTargetedIssueFileOptions,
+): Promise<ParsedStartupIssueFile> {
+  const parsedIssue = await parseDiscoveredIssueFile(options);
+
+  assertMatchingIssueId(
+    options.filePath,
+    options.expectedIssueId,
+    parsedIssue.issue.id,
+  );
+
+  return parsedIssue;
+}
+
 export async function scanIssueFile(
   options: ScanIssueFileOptions,
 ): Promise<ParsedStartupIssueFile> {
-  return parseTargetedIssueFile({
+  return parseDiscoveredIssueFile({
     filePath: options.filePath,
     startupRelativeFilePath: toStartupRelativeFilePath(
       options.rootDirectory,
       options.filePath,
     ),
     indexedAt: options.indexedAt,
-    expectedIssueId: getExpectedIssueId(options.filePath),
   });
 }

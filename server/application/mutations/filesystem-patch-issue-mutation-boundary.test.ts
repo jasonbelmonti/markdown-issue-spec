@@ -165,6 +165,60 @@ test("createFilesystemPatchIssueMutationBoundary patches renamed issue files usi
   await expect(readFile(canonicalFilePath, "utf8")).rejects.toThrow();
 });
 
+test("createFilesystemPatchIssueMutationBoundary validates renamed linked issues through the accepted issue set", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+  const boundary = createPatchIssueBoundary(rootDirectory, {
+    now: () => PATCH_TIMESTAMP,
+  });
+  const store = await writeCanonicalIssue(rootDirectory, {
+    ...EXISTING_ISSUE,
+    links: [
+      {
+        rel: "depends_on",
+        target: {
+          id: "ISSUE-0002",
+        },
+        required_before: "completed",
+      },
+    ],
+  });
+  const dependencyIssue: Issue = {
+    spec_version: "mis/0.1",
+    id: "ISSUE-0002",
+    title: "Renamed dependency",
+    kind: "task",
+    status: "completed",
+    resolution: "done",
+    created_at: "2026-04-16T10:00:00-05:00",
+    body: "## Objective\n\nStay visible after a rename.\n",
+  };
+
+  await store.writeIssue(dependencyIssue);
+  await rename(
+    store.getIssueFilePath(dependencyIssue.id),
+    join(rootDirectory, "vault", "issues", "dependency-renamed.md"),
+  );
+
+  const expectedRevision = computeIssueRevision(
+    await readIssueSource(rootDirectory, EXISTING_ISSUE.id),
+  );
+  const result = await boundary.patchIssue({
+    ...PATCH_ISSUE_COMMAND,
+    input: {
+      ...PATCH_ISSUE_COMMAND.input,
+      expectedRevision,
+    },
+  });
+
+  expect(result.status).toBe("applied");
+  if (result.status !== "applied") {
+    throw new Error("Expected patch mutation to apply.");
+  }
+
+  expect(result.envelope.derived.blocked_by_ids).toEqual([]);
+  expect(result.envelope.derived.ready).toBe(true);
+});
+
 test("createFilesystemPatchIssueMutationBoundary rejects unsafe issue ids as request validation errors", async () => {
   const rootDirectory = await createTemporaryRootDirectory();
   const boundary = createPatchIssueBoundary(rootDirectory, {

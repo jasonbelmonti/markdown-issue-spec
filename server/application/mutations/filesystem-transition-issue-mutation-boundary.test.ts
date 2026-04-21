@@ -815,6 +815,51 @@ test("createFilesystemTransitionIssueMutationBoundary resolves renamed dependenc
   });
 });
 
+test("createFilesystemTransitionIssueMutationBoundary keeps renamed related issues in derived envelopes", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+  const boundary = createTransitionIssueBoundary(rootDirectory, {
+    now: () => TRANSITION_TIMESTAMP,
+  });
+  await writeCanonicalIssue(rootDirectory);
+  const store = new FilesystemIssueStore({ rootDirectory });
+  const childIssue: Issue = {
+    spec_version: "mis/0.1",
+    id: "ISSUE-0002",
+    title: "Renamed child issue",
+    kind: "task",
+    status: "accepted",
+    created_at: "2026-04-16T10:00:00-05:00",
+    links: [
+      {
+        rel: "parent",
+        target: {
+          id: EXISTING_ISSUE.id,
+        },
+      },
+    ],
+    body: "## Objective\n\nStay visible in derived fields.\n",
+  };
+
+  await store.writeIssue(childIssue);
+  await rename(
+    store.getIssueFilePath(childIssue.id),
+    join(rootDirectory, "vault", "issues", "child-renamed.md"),
+  );
+
+  const expectedRevision = await readIssueRevision(rootDirectory, EXISTING_ISSUE.id);
+  const result = await expectAppliedTransition(
+    boundary.transitionIssue({
+      ...TRANSITION_ISSUE_COMMAND,
+      input: {
+        expectedRevision,
+        to_status: "in_progress",
+      },
+    }),
+  );
+
+  expect(result.envelope.derived.children_ids).toEqual([childIssue.id]);
+});
+
 test("createFilesystemTransitionIssueMutationBoundary rejects unsafe issue ids as request validation errors", async () => {
   const rootDirectory = await createTemporaryRootDirectory();
   const boundary = createTransitionIssueBoundary(rootDirectory, {
