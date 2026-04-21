@@ -3,6 +3,7 @@ import {
   type FilesystemIssueMutationLock,
   withFilesystemIssueMutationLock,
 } from "./filesystem-issue-mutation-lock.ts";
+import { completeAppliedIssueMutation } from "./complete-applied-issue-mutation.ts";
 import {
   loadTransitionIssueFilesystemState,
   persistTransitionedIssueAndBuildEnvelope,
@@ -10,7 +11,6 @@ import {
 } from "./transition-issue-filesystem-state.ts";
 import { normalizeTransitionIssueInput } from "./normalize-transition-issue-input.ts";
 import { prepareTransitionIssueMutation } from "./prepare-transition-issue-mutation.ts";
-import { finalizePersistedIssueMutation } from "./finalize-persisted-issue-mutation.ts";
 import {
   toTransitionIssueValidationError,
 } from "./transition-issue-validation-error.ts";
@@ -67,7 +67,7 @@ export function createFilesystemTransitionIssueMutationBoundary(
 
             await beforePersist?.();
 
-            const envelope = await finalizePersistedIssueMutation({
+            return completeAppliedIssueMutation({
               persist: () =>
                 persistTransitionedIssueAndBuildEnvelope(
                   filesystemState,
@@ -78,13 +78,6 @@ export function createFilesystemTransitionIssueMutationBoundary(
               rollback: () => rollbackTransitionedIssue(filesystemState),
               afterPersist,
             });
-
-            return {
-              status: "applied",
-              issue: envelope.issue,
-              envelope,
-              revision: envelope.revision,
-            } as const;
           },
         );
       } catch (error) {

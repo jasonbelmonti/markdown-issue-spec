@@ -1,4 +1,5 @@
 import { parseCreateIssueCandidate } from "./create-issue-candidate.ts";
+import { completeAppliedIssueMutation } from "./complete-applied-issue-mutation.ts";
 import {
   getCreateIssueGraphValidationErrors,
   loadCreateIssueFilesystemState,
@@ -15,7 +16,6 @@ import {
   type FilesystemIssueMutationLock,
   withFilesystemIssueMutationLock,
 } from "./filesystem-issue-mutation-lock.ts";
-import { finalizePersistedIssueMutation } from "./finalize-persisted-issue-mutation.ts";
 import type {
   CreateIssueMutationBoundary,
   CreateIssueMutationCommand,
@@ -71,7 +71,7 @@ export function createFilesystemCreateIssueMutationBoundary(
 
             await beforePersist?.();
 
-            const envelope = await finalizePersistedIssueMutation({
+            return completeAppliedIssueMutation({
               persist: () =>
                 persistCreatedIssueAndBuildEnvelope(
                   filesystemState,
@@ -82,13 +82,6 @@ export function createFilesystemCreateIssueMutationBoundary(
               rollback: () => rollbackCreatedIssue(filesystemState),
               afterPersist,
             });
-
-            return {
-              status: "applied",
-              issue: envelope.issue,
-              envelope,
-              revision: envelope.revision,
-            } as const;
           },
         );
       } catch (error) {
