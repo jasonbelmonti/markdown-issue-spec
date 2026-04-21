@@ -12,8 +12,9 @@ import { FilesystemIssueStore } from "../store/index.ts";
 
 const SERVER_BOOT_TIMEOUT_MS = 10_000;
 const SERVER_SHUTDOWN_TIMEOUT_MS = 5_000;
-const SERVER_URL = "http://127.0.0.1:3000";
 const ENTRYPOINT_PATH = fileURLToPath(new URL("../../index.ts", import.meta.url));
+const SERVER_LISTENING_LOG_PATTERN =
+  /markdown-issue-spec server listening on (http:\/\/[^\s]+)/;
 
 const SEEDED_ISSUE: Issue = {
   spec_version: "mis/0.1",
@@ -30,6 +31,19 @@ interface SpawnedServer {
   process: ChildProcessWithoutNullStreams;
   stdout: string[];
   stderr: string[];
+}
+
+function formatServerOutput(server: SpawnedServer): string {
+  return [
+    `stdout:\n${server.stdout.join("")}`,
+    `stderr:\n${server.stderr.join("")}`,
+  ].join("\n\n");
+}
+
+function getListeningServerUrl(server: SpawnedServer): string | null {
+  const match = SERVER_LISTENING_LOG_PATTERN.exec(server.stdout.join(""));
+
+  return match?.[1] ?? null;
 }
 
 async function createTemporaryRootDirectory(): Promise<string> {
@@ -56,7 +70,7 @@ function spawnDefaultEntrypoint(rootDirectory: string): SpawnedServer {
   };
 }
 
-async function waitForServerReady(server: SpawnedServer): Promise<void> {
+async function waitForServerReady(server: SpawnedServer): Promise<string> {
   const startedAt = Date.now();
 
   while (Date.now() - startedAt < SERVER_BOOT_TIMEOUT_MS) {
@@ -64,20 +78,15 @@ async function waitForServerReady(server: SpawnedServer): Promise<void> {
       throw new Error(
         [
           "The shipped entrypoint exited before the smoke test could connect.",
-          `stdout:\n${server.stdout.join("")}`,
-          `stderr:\n${server.stderr.join("")}`,
+          formatServerOutput(server),
         ].join("\n\n"),
       );
     }
 
-    try {
-      const response = await fetch(`${SERVER_URL}/issues/${SEEDED_ISSUE.id}`);
+    const serverUrl = getListeningServerUrl(server);
 
-      if (response.status === 404) {
-        return;
-      }
-    } catch {
-      // The default entrypoint is still starting up.
+    if (serverUrl !== null) {
+      return serverUrl;
     }
 
     await sleep(100);
@@ -86,8 +95,7 @@ async function waitForServerReady(server: SpawnedServer): Promise<void> {
   throw new Error(
     [
       `Timed out waiting ${SERVER_BOOT_TIMEOUT_MS}ms for the default entrypoint.`,
-      `stdout:\n${server.stdout.join("")}`,
-      `stderr:\n${server.stderr.join("")}`,
+      formatServerOutput(server),
     ].join("\n\n"),
   );
 }
@@ -121,13 +129,15 @@ test("bun run index.ts boots the shipped service against cwd-backed storage and 
   const server = spawnDefaultEntrypoint(rootDirectory);
 
   try {
-    await waitForServerReady(server);
+    const serverUrl = await waitForServerReady(server);
 
-    const beforeRebuildResponse = await fetch(`${SERVER_URL}/issues/${SEEDED_ISSUE.id}`);
+    const beforeRebuildResponse = await fetch(
+      `${serverUrl}/issues/${SEEDED_ISSUE.id}`,
+    );
 
     expect(beforeRebuildResponse.status).toBe(404);
 
-    const rebuildResponse = await fetch(`${SERVER_URL}/admin/rebuild-index`, {
+    const rebuildResponse = await fetch(`${serverUrl}/admin/rebuild-index`, {
       method: "POST",
     });
 
@@ -140,7 +150,7 @@ test("bun run index.ts boots the shipped service against cwd-backed storage and 
 
     await expect(stat(join(rootDirectory, ".mis", "index.sqlite"))).resolves.toBeDefined();
 
-    const issueResponse = await fetch(`${SERVER_URL}/issues/${SEEDED_ISSUE.id}`);
+    const issueResponse = await fetch(`${serverUrl}/issues/${SEEDED_ISSUE.id}`);
 
     expect(issueResponse.status).toBe(200);
     expect(await issueResponse.json()).toMatchObject({
