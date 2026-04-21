@@ -1,5 +1,3 @@
-import { readFile } from "node:fs/promises";
-
 import type {
   Issue,
   IssueEnvelope,
@@ -13,9 +11,13 @@ import {
   toStartupRelativeFilePath,
   type ParsedStartupIssueFile,
 } from "../../startup/index.ts";
-import { atomicWriteFile } from "../../store/atomic-write.ts";
 import { FilesystemIssueStore } from "../../store/index.ts";
 import { UnsafeIssueIdError } from "../../store/issue-file-path.ts";
+import {
+  readCanonicalIssueSnapshot,
+  restoreCanonicalIssueSnapshot,
+  type CanonicalIssueSnapshot,
+} from "./canonical-issue-snapshot.ts";
 import { TransitionIssueNotFoundError } from "./transition-issue-not-found-error.ts";
 import {
   createTransitionIssueCanonicalValidationError,
@@ -27,8 +29,7 @@ import {
 export interface TransitionIssueFilesystemState {
   currentParsedIssue: ParsedStartupIssueFile;
   currentParsedIssues: ParsedStartupIssueFile[];
-  canonicalFilePath: string;
-  originalSource: string;
+  canonicalSnapshot: CanonicalIssueSnapshot;
   loadDependencyIssues: (nextStatus: "in_progress" | "completed") => Promise<Issue[]>;
   store: FilesystemIssueStore;
 }
@@ -266,8 +267,7 @@ export async function loadTransitionIssueFilesystemState(
   return {
     currentParsedIssue,
     currentParsedIssues: await loadParsedStartupIssues(rootDirectory, indexedAt),
-    canonicalFilePath: filePath,
-    originalSource: await readFile(filePath, "utf8"),
+    canonicalSnapshot: await readCanonicalIssueSnapshot(filePath),
     loadDependencyIssues: (nextStatus) =>
       loadDependencyIssues(
         rootDirectory,
@@ -337,5 +337,5 @@ export async function persistTransitionedIssueAndBuildEnvelope(
 export async function rollbackTransitionedIssue(
   state: TransitionIssueFilesystemState,
 ): Promise<void> {
-  await atomicWriteFile(state.canonicalFilePath, state.originalSource);
+  await restoreCanonicalIssueSnapshot(state.canonicalSnapshot);
 }

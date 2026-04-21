@@ -1,11 +1,12 @@
 import { isIP } from "node:net";
 
 function normalizeHostname(hostname: string): string {
-  if (hostname.startsWith("[") && hostname.endsWith("]")) {
-    return hostname.slice(1, -1).toLowerCase();
-  }
+  const unwrappedHostname =
+    hostname.startsWith("[") && hostname.endsWith("]")
+      ? hostname.slice(1, -1)
+      : hostname;
 
-  return hostname.toLowerCase();
+  return unwrappedHostname.toLowerCase();
 }
 
 function isLoopbackIpv4(hostname: string): boolean {
