@@ -87,6 +87,7 @@ export async function loadPatchIssueFilesystemState(
       rootDirectory,
       filePath,
       indexedAt,
+      expectedIssueId: issueId,
     });
   } catch (error) {
     if (error instanceof Error && "code" in error && error.code === "ENOENT") {

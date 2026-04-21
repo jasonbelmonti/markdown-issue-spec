@@ -113,6 +113,7 @@ async function loadDependencyIssues(
         rootDirectory,
         filePath: dependencyFilePath,
         indexedAt,
+        expectedIssueId: link.target.id,
       });
 
       dependencyIssuesById.set(link.target.id, parsedDependencyIssue.issue);
@@ -224,6 +225,7 @@ export async function loadTransitionIssueFilesystemState(
       rootDirectory,
       filePath,
       indexedAt,
+      expectedIssueId: issueId,
     });
   } catch (error) {
     if (error instanceof Error && "code" in error && error.code === "ENOENT") {
