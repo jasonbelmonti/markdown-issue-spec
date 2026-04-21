@@ -32,9 +32,11 @@ export class ScanIssueFileIdMismatchError extends Error {
   }
 }
 
-function assertMatchingIssueId(filePath: string, actualIssueId: string): void {
-  const expectedIssueId = getExpectedIssueId(filePath);
-
+function assertMatchingIssueId(
+  filePath: string,
+  expectedIssueId: string,
+  actualIssueId: string,
+): void {
   if (actualIssueId !== expectedIssueId) {
     throw new ScanIssueFileIdMismatchError(
       filePath,
@@ -50,23 +52,45 @@ export interface ScanIssueFileOptions {
   indexedAt: Rfc3339Timestamp;
 }
 
-export async function scanIssueFile(
-  options: ScanIssueFileOptions,
+export interface ParseTargetedIssueFileOptions {
+  filePath: string;
+  startupRelativeFilePath: string;
+  indexedAt: Rfc3339Timestamp;
+  expectedIssueId: string;
+}
+
+export async function parseTargetedIssueFile(
+  options: ParseTargetedIssueFileOptions,
 ): Promise<ParsedStartupIssueFile> {
   const source = await Bun.file(options.filePath).text();
   const issue = parseIssueMarkdown(source);
 
-  assertMatchingIssueId(options.filePath, issue.id);
+  assertMatchingIssueId(
+    options.filePath,
+    options.expectedIssueId,
+    issue.id,
+  );
 
   return {
     issue,
     revision: computeIssueRevision(source),
     source: {
-      file_path: toStartupRelativeFilePath(
-        options.rootDirectory,
-        options.filePath,
-      ),
+      file_path: options.startupRelativeFilePath,
       indexed_at: options.indexedAt,
     },
   };
+}
+
+export async function scanIssueFile(
+  options: ScanIssueFileOptions,
+): Promise<ParsedStartupIssueFile> {
+  return parseTargetedIssueFile({
+    filePath: options.filePath,
+    startupRelativeFilePath: toStartupRelativeFilePath(
+      options.rootDirectory,
+      options.filePath,
+    ),
+    indexedAt: options.indexedAt,
+    expectedIssueId: getExpectedIssueId(options.filePath),
+  });
 }

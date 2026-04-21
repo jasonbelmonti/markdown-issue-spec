@@ -38,12 +38,14 @@ export function createFilesystemIssueMutationBoundary(
     }).createIssue,
     patchIssue: createFilesystemPatchIssueMutationBoundary({
       rootDirectory: options.rootDirectory,
+      databasePath: options.databasePath,
       now: options.patchNow,
       afterPersist: rebuildProjection,
       mutationLock,
     }).patchIssue,
     transitionIssue: createFilesystemTransitionIssueMutationBoundary({
       rootDirectory: options.rootDirectory,
+      databasePath: options.databasePath,
       now: options.transitionNow,
       afterPersist: rebuildProjection,
       mutationLock,

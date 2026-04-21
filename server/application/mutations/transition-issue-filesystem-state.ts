@@ -1,3 +1,5 @@
+import { join } from "node:path";
+
 import type {
   Issue,
   IssueEnvelope,
@@ -6,18 +8,24 @@ import { findRelevantDependencyLinks } from "../../core/validation/index.ts";
 import {
   buildStartupIssueEnvelope,
   listCanonicalIssueFiles,
+  parseTargetedIssueFile,
   scanIssueFile,
   ScanIssueFileIdMismatchError,
   toStartupRelativeFilePath,
   type ParsedStartupIssueFile,
 } from "../../startup/index.ts";
-import { FilesystemIssueStore } from "../../store/index.ts";
+import {
+  FilesystemIssueStore,
+  ProjectionIssuePathResolver,
+  type ExistingIssuePathResolver,
+  type ResolvedIssueLocator,
+} from "../../store/index.ts";
 import { UnsafeIssueIdError } from "../../store/issue-file-path.ts";
 import {
-  readCanonicalIssueSnapshot,
   restoreCanonicalIssueSnapshot,
   type CanonicalIssueSnapshot,
 } from "./canonical-issue-snapshot.ts";
+import { loadResolvedIssueFile } from "./load-resolved-issue-file.ts";
 import { TransitionIssueNotFoundError } from "./transition-issue-not-found-error.ts";
 import {
   createTransitionIssueCanonicalValidationError,
@@ -29,6 +37,7 @@ import {
 export interface TransitionIssueFilesystemState {
   currentParsedIssue: ParsedStartupIssueFile;
   currentParsedIssues: ParsedStartupIssueFile[];
+  currentIssueLocator: ResolvedIssueLocator;
   canonicalSnapshot: CanonicalIssueSnapshot;
   loadDependencyIssues: (nextStatus: "in_progress" | "completed") => Promise<Issue[]>;
   store: FilesystemIssueStore;
@@ -91,9 +100,17 @@ function createDependencyIssueValidationError(
   );
 }
 
+function getTargetIssueFilePath(
+  store: FilesystemIssueStore,
+  issueId: string,
+  currentIssueLocator: ResolvedIssueLocator | null,
+): string {
+  return currentIssueLocator?.absoluteFilePath ?? store.getIssueFilePath(issueId);
+}
+
 async function loadDependencyIssues(
-  rootDirectory: string,
   indexedAt: string,
+  resolver: ExistingIssuePathResolver,
   store: FilesystemIssueStore,
   issue: Issue,
   nextStatus: "in_progress" | "completed",
@@ -105,14 +122,25 @@ async function loadDependencyIssues(
       continue;
     }
 
-    let dependencyFilePath: string | undefined;
+    let dependencyLocator: ResolvedIssueLocator | null = null;
 
     try {
-      dependencyFilePath = store.getIssueFilePath(link.target.id);
-      const parsedDependencyIssue = await scanIssueFile({
-        rootDirectory,
-        filePath: dependencyFilePath,
+      store.getIssueFilePath(link.target.id);
+      dependencyLocator = await resolver.resolveExistingIssuePath(link.target.id);
+
+      if (dependencyLocator == null) {
+        const notFoundError = new Error(
+          `Dependency issue ${link.target.id} could not be loaded for transition validation.`,
+        ) as NodeJS.ErrnoException;
+        notFoundError.code = "ENOENT";
+        throw notFoundError;
+      }
+
+      const parsedDependencyIssue = await parseTargetedIssueFile({
+        filePath: dependencyLocator.absoluteFilePath,
+        startupRelativeFilePath: dependencyLocator.startupRelativeFilePath,
         indexedAt,
+        expectedIssueId: link.target.id,
       });
 
       dependencyIssuesById.set(link.target.id, parsedDependencyIssue.issue);
@@ -143,10 +171,7 @@ async function loadDependencyIssues(
           error.message,
           {
             actualIssueId: error.actualIssueId,
-            filePath:
-              dependencyFilePath === undefined
-                ? undefined
-                : toStartupRelativeFilePath(rootDirectory, dependencyFilePath),
+            filePath: dependencyLocator?.startupRelativeFilePath,
           },
         );
       }
@@ -161,10 +186,7 @@ async function loadDependencyIssues(
           validationError.errors[0]?.message ?? "Dependency issue is invalid.",
           {
             errors: validationError.errors,
-            filePath:
-              dependencyFilePath === undefined
-                ? undefined
-                : toStartupRelativeFilePath(rootDirectory, dependencyFilePath),
+            filePath: dependencyLocator?.startupRelativeFilePath,
           },
         );
       }
@@ -176,10 +198,7 @@ async function loadDependencyIssues(
           link.target.id,
           error.message,
           {
-            filePath:
-              dependencyFilePath === undefined
-                ? undefined
-                : toStartupRelativeFilePath(rootDirectory, dependencyFilePath),
+            filePath: dependencyLocator?.startupRelativeFilePath,
           },
         );
       }
@@ -195,13 +214,30 @@ export async function loadTransitionIssueFilesystemState(
   rootDirectory: string,
   issueId: string,
   indexedAt: string,
+  databasePath = join(rootDirectory, ".mis", "index.sqlite"),
 ): Promise<TransitionIssueFilesystemState> {
   const store = new FilesystemIssueStore({ rootDirectory });
-  let filePath: string;
-  let currentParsedIssue: ParsedStartupIssueFile;
+  const resolver = new ProjectionIssuePathResolver({
+    rootDirectory,
+    databasePath,
+  });
+  let loadedIssue: Awaited<
+    ReturnType<typeof loadResolvedIssueFile>
+  > = null;
+  let currentIssueLocator: ResolvedIssueLocator | null = null;
 
   try {
-    filePath = store.getIssueFilePath(issueId);
+    loadedIssue = await loadResolvedIssueFile(
+      store,
+      resolver,
+      issueId,
+      indexedAt,
+    );
+    currentIssueLocator = loadedIssue?.issueLocator ?? null;
+
+    if (loadedIssue == null) {
+      throw new TransitionIssueNotFoundError(issueId);
+    }
   } catch (error) {
     if (error instanceof UnsafeIssueIdError) {
       throw createTransitionIssueValidationError(
@@ -216,24 +252,21 @@ export async function loadTransitionIssueFilesystemState(
       );
     }
 
-    throw error;
-  }
-
-  try {
-    currentParsedIssue = await scanIssueFile({
-      rootDirectory,
-      filePath,
-      indexedAt,
-    });
-  } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+    if (
+      error instanceof TransitionIssueNotFoundError ||
+      (error instanceof Error && "code" in error && error.code === "ENOENT")
+    ) {
       throw new TransitionIssueNotFoundError(issueId);
     }
 
     if (error instanceof ScanIssueFileIdMismatchError) {
       throw createTargetIssueInvalidError(
         rootDirectory,
-        filePath,
+        getTargetIssueFilePath(
+          store,
+          issueId,
+          currentIssueLocator,
+        ),
         issueId,
         error.message,
         {
@@ -252,7 +285,11 @@ export async function loadTransitionIssueFilesystemState(
     if (error instanceof Error) {
       throw createTargetIssueInvalidError(
         rootDirectory,
-        filePath,
+        getTargetIssueFilePath(
+          store,
+          issueId,
+          currentIssueLocator,
+        ),
         issueId,
         error.message,
         {
@@ -265,15 +302,16 @@ export async function loadTransitionIssueFilesystemState(
   }
 
   return {
-    currentParsedIssue,
+    currentParsedIssue: loadedIssue.parsedIssue,
     currentParsedIssues: await loadParsedStartupIssues(rootDirectory, indexedAt),
-    canonicalSnapshot: await readCanonicalIssueSnapshot(filePath),
+    currentIssueLocator: loadedIssue.issueLocator,
+    canonicalSnapshot: loadedIssue.canonicalSnapshot,
     loadDependencyIssues: (nextStatus) =>
       loadDependencyIssues(
-        rootDirectory,
         indexedAt,
+        resolver,
         store,
-        currentParsedIssue.issue,
+        loadedIssue.parsedIssue.issue,
         nextStatus,
       ),
     store,
@@ -300,33 +338,37 @@ function buildTransitionedIssueEnvelope(
 
 async function persistTransitionedIssue(
   store: FilesystemIssueStore,
-  rootDirectory: string,
+  locator: ResolvedIssueLocator,
   issue: Issue,
   indexedAt: string,
 ): Promise<ParsedStartupIssueFile> {
-  const filePath = await store.writeIssue(issue, {
-    updatedAt: {
-      mode: "canonical_mutation",
-      timestamp: indexedAt,
+  const filePath = await store.writeIssueAtPath(
+    issue,
+    locator.absoluteFilePath,
+    {
+      updatedAt: {
+        mode: "canonical_mutation",
+        timestamp: indexedAt,
+      },
     },
-  });
+  );
 
-  return scanIssueFile({
-    rootDirectory,
+  return parseTargetedIssueFile({
     filePath,
+    startupRelativeFilePath: locator.startupRelativeFilePath,
     indexedAt,
+    expectedIssueId: issue.id,
   });
 }
 
 export async function persistTransitionedIssueAndBuildEnvelope(
   state: TransitionIssueFilesystemState,
-  rootDirectory: string,
   issue: Issue,
   indexedAt: string,
 ): Promise<IssueEnvelope> {
   const persistedIssue = await persistTransitionedIssue(
     state.store,
-    rootDirectory,
+    state.currentIssueLocator,
     issue,
     indexedAt,
   );

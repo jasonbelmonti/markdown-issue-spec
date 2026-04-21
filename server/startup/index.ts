@@ -1,8 +1,10 @@
 export { listCanonicalIssueFiles } from "./issue-file-discovery.ts";
 export {
+  parseTargetedIssueFile,
   scanIssueFile,
   ScanIssueFileIdMismatchError,
   toStartupRelativeFilePath,
+  type ParseTargetedIssueFileOptions,
   type ScanIssueFileOptions,
 } from "./scan-issue-file.ts";
 export {

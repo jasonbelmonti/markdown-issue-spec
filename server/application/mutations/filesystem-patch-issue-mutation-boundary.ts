@@ -25,6 +25,7 @@ import type {
 
 export interface FilesystemPatchIssueMutationBoundaryOptions {
   rootDirectory: string;
+  databasePath?: string;
   now?: () => string;
   beforePersist?: () => Promise<void>;
   afterPersist?: () => Promise<void>;
@@ -57,6 +58,7 @@ export function createFilesystemPatchIssueMutationBoundary(
               rootDirectory,
               command.issueId,
               indexedAt,
+              options.databasePath,
             );
 
             if (
@@ -91,7 +93,6 @@ export function createFilesystemPatchIssueMutationBoundary(
               persist: () =>
                 persistPatchedIssueAndBuildEnvelope(
                   filesystemState,
-                  rootDirectory,
                   issue,
                   indexedAt,
                 ),

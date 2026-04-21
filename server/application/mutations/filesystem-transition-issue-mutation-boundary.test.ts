@@ -1,9 +1,10 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rename, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import type { Issue } from "../../core/types/index.ts";
+import type { Issue, IssueEnvelope } from "../../core/types/index.ts";
+import { indexIssueEnvelope, openProjectionDatabase } from "../../projection/index.ts";
 import { computeIssueRevision } from "../../store/issue-revision.ts";
 import { FilesystemIssueStore } from "../../store/index.ts";
 import type { TransitionIssueMutationCommand } from "./issue-mutation-boundary.ts";
@@ -49,6 +50,20 @@ function createTransitionIssueBoundary(
   });
 }
 
+async function indexProjectedIssue(
+  rootDirectory: string,
+  issue: Issue,
+  filePath: string,
+): Promise<void> {
+  const database = openProjectionDatabase(join(rootDirectory, ".mis", "index.sqlite"));
+
+  try {
+    indexIssueEnvelope(database, createEnvelope(issue, filePath));
+  } finally {
+    database.close();
+  }
+}
+
 async function writeCanonicalIssue(
   rootDirectory: string,
   issue: Issue = EXISTING_ISSUE,
@@ -56,6 +71,7 @@ async function writeCanonicalIssue(
   const store = new FilesystemIssueStore({ rootDirectory });
 
   await store.writeIssue(issue);
+  await indexProjectedIssue(rootDirectory, issue, `vault/issues/${issue.id}.md`);
 
   return store;
 }
@@ -74,6 +90,25 @@ async function readIssueRevision(
   issueId: string,
 ): Promise<string> {
   return computeIssueRevision(await readIssueSource(rootDirectory, issueId));
+}
+
+function createEnvelope(issue: Issue, filePath: string): IssueEnvelope {
+  return {
+    issue,
+    revision: `rev-${issue.id.toLowerCase()}`,
+    source: {
+      file_path: filePath,
+      indexed_at: TRANSITION_TIMESTAMP,
+    },
+    derived: {
+      children_ids: [],
+      blocks_ids: [],
+      blocked_by_ids: [],
+      duplicates_ids: [],
+      ready: true,
+      is_blocked: false,
+    },
+  };
 }
 
 async function expectAppliedTransition(
@@ -314,6 +349,16 @@ test("createFilesystemTransitionIssueMutationBoundary rejects transitions when a
     created_at: "2026-04-16T10:00:00-05:00",
     body: "## Objective\n\nBe valid before corruption.\n",
   });
+  await indexProjectedIssue(rootDirectory, {
+    spec_version: "mis/0.1",
+    id: "ISSUE-0002",
+    title: "Dependency with broken frontmatter",
+    kind: "task",
+    status: "completed",
+    resolution: "done",
+    created_at: "2026-04-16T10:00:00-05:00",
+    body: "## Objective\n\nBe valid before corruption.\n",
+  }, "vault/issues/ISSUE-0002.md");
 
   const dependencyFilePath = store.getIssueFilePath("ISSUE-0002");
   await writeFile(
@@ -697,4 +742,104 @@ created_at: [unterminated
     updated_at: TRANSITION_TIMESTAMP,
   });
   expect(await store.readIssue(EXISTING_ISSUE.id)).toEqual(result.issue);
+});
+
+test("createFilesystemTransitionIssueMutationBoundary resolves renamed dependency files through projection", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+  const links = [
+    {
+      rel: "depends_on" as const,
+      target: {
+        id: "ISSUE-0002",
+      },
+      required_before: "in_progress" as const,
+    },
+  ];
+  const boundary = createTransitionIssueBoundary(rootDirectory, {
+    now: () => TRANSITION_TIMESTAMP,
+  });
+  const store = await writeCanonicalIssue(rootDirectory, {
+    ...EXISTING_ISSUE,
+    links,
+  });
+  const dependencyIssue: Issue = {
+    spec_version: "mis/0.1",
+    id: "ISSUE-0002",
+    title: "Renamed dependency",
+    kind: "task",
+    status: "completed",
+    resolution: "done",
+    created_at: "2026-04-16T10:00:00-05:00",
+    body: "## Objective\n\nBe found through the resolver.\n",
+  };
+
+  await store.writeIssue(dependencyIssue);
+  const dependencyCanonicalFilePath = store.getIssueFilePath(dependencyIssue.id);
+  const dependencyRenamedFilePath = join(
+    rootDirectory,
+    "vault",
+    "issues",
+    "dependency-renamed.md",
+  );
+  await rename(dependencyCanonicalFilePath, dependencyRenamedFilePath);
+  await indexProjectedIssue(
+    rootDirectory,
+    {
+      ...EXISTING_ISSUE,
+      links,
+    },
+    `vault/issues/${EXISTING_ISSUE.id}.md`,
+  );
+  await indexProjectedIssue(
+    rootDirectory,
+    dependencyIssue,
+    "vault/issues/dependency-renamed.md",
+  );
+
+  const expectedRevision = await readIssueRevision(rootDirectory, EXISTING_ISSUE.id);
+  const result = await expectAppliedTransition(
+    boundary.transitionIssue({
+      ...TRANSITION_ISSUE_COMMAND,
+      input: {
+        expectedRevision,
+        to_status: "in_progress",
+      },
+    }),
+  );
+
+  expect(result.issue).toMatchObject({
+    ...EXISTING_ISSUE,
+    links,
+    status: "in_progress",
+    updated_at: TRANSITION_TIMESTAMP,
+  });
+});
+
+test("createFilesystemTransitionIssueMutationBoundary rejects unsafe issue ids as request validation errors", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+  const boundary = createTransitionIssueBoundary(rootDirectory, {
+    now: () => TRANSITION_TIMESTAMP,
+  });
+
+  const error = await expectTransitionValidationError(
+    boundary.transitionIssue({
+      ...TRANSITION_ISSUE_COMMAND,
+      issueId: "../ISSUE-1234",
+      input: {
+        expectedRevision: "stale-revision",
+        to_status: "in_progress",
+      },
+    }),
+  );
+
+  expect(error.errors).toEqual([
+    expect.objectContaining({
+      code: "transition.invalid_issue_id",
+      path: "/id",
+      source: "request",
+      details: {
+        issueId: "../ISSUE-1234",
+      },
+    }),
+  ]);
 });

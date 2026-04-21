@@ -1,3 +1,5 @@
+import { join } from "node:path";
+
 import type {
   Issue,
   IssueEnvelope,
@@ -7,18 +9,23 @@ import { validateIssueGraph } from "../../core/validation/index.ts";
 import {
   buildStartupIssueEnvelope,
   listCanonicalIssueFiles,
+  parseTargetedIssueFile,
   scanIssueFile,
   ScanIssueFileIdMismatchError,
   toStartupRelativeFilePath,
   type ParsedStartupIssueFile,
 } from "../../startup/index.ts";
-import { FilesystemIssueStore } from "../../store/index.ts";
+import {
+  FilesystemIssueStore,
+  ProjectionIssuePathResolver,
+  type ResolvedIssueLocator,
+} from "../../store/index.ts";
 import { UnsafeIssueIdError } from "../../store/issue-file-path.ts";
 import {
-  readCanonicalIssueSnapshot,
   restoreCanonicalIssueSnapshot,
   type CanonicalIssueSnapshot,
 } from "./canonical-issue-snapshot.ts";
+import { loadResolvedIssueFile } from "./load-resolved-issue-file.ts";
 import { PatchIssueNotFoundError } from "./patch-issue-not-found-error.ts";
 import {
   createPatchIssueCanonicalValidationError,
@@ -30,6 +37,7 @@ import {
 export interface PatchIssueFilesystemState {
   currentParsedIssue: ParsedStartupIssueFile;
   currentParsedIssues: ParsedStartupIssueFile[];
+  currentIssueLocator: ResolvedIssueLocator;
   canonicalSnapshot: CanonicalIssueSnapshot;
   store: FilesystemIssueStore;
 }
@@ -54,18 +62,51 @@ async function loadParsedStartupIssues(
   );
 }
 
+function getTargetIssuePath(
+  rootDirectory: string,
+  store: FilesystemIssueStore,
+  issueId: string,
+  currentIssueLocator: ResolvedIssueLocator | null,
+): string {
+  return (
+    currentIssueLocator?.startupRelativeFilePath ??
+    toStartupRelativeFilePath(rootDirectory, store.getIssueFilePath(issueId))
+  );
+}
+
 export async function loadPatchIssueFilesystemState(
   rootDirectory: string,
   issueId: string,
   indexedAt: string,
+  databasePath = join(rootDirectory, ".mis", "index.sqlite"),
 ): Promise<PatchIssueFilesystemState> {
   const store = new FilesystemIssueStore({ rootDirectory });
-  let filePath: string;
-  let currentParsedIssue: ParsedStartupIssueFile;
+  const resolver = new ProjectionIssuePathResolver({
+    rootDirectory,
+    databasePath,
+  });
+  let loadedIssue: Awaited<
+    ReturnType<typeof loadResolvedIssueFile>
+  > = null;
+  let currentIssueLocator: ResolvedIssueLocator | null = null;
 
   try {
-    filePath = store.getIssueFilePath(issueId);
+    loadedIssue = await loadResolvedIssueFile(
+      store,
+      resolver,
+      issueId,
+      indexedAt,
+    );
+    currentIssueLocator = loadedIssue?.issueLocator ?? null;
+
+    if (loadedIssue == null) {
+      throw new PatchIssueNotFoundError(issueId);
+    }
   } catch (error) {
+    if (error instanceof PatchIssueValidationError) {
+      throw error;
+    }
+
     if (error instanceof UnsafeIssueIdError) {
       throw new PatchIssueValidationError([
         createPatchIssueRequestValidationError({
@@ -79,17 +120,10 @@ export async function loadPatchIssueFilesystemState(
       ]);
     }
 
-    throw error;
-  }
-
-  try {
-    currentParsedIssue = await scanIssueFile({
-      rootDirectory,
-      filePath,
-      indexedAt,
-    });
-  } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+    if (
+      error instanceof PatchIssueNotFoundError ||
+      (error instanceof Error && "code" in error && error.code === "ENOENT")
+    ) {
       throw new PatchIssueNotFoundError(issueId);
     }
 
@@ -97,7 +131,12 @@ export async function loadPatchIssueFilesystemState(
       throw new PatchIssueValidationError([
         createPatchIssueCanonicalValidationError({
           code: "patch.target_issue_invalid",
-          path: toStartupRelativeFilePath(rootDirectory, filePath),
+          path: getTargetIssuePath(
+            rootDirectory,
+            store,
+            issueId,
+            currentIssueLocator,
+          ),
           message: error.message,
           details: {
             issueId,
@@ -117,7 +156,12 @@ export async function loadPatchIssueFilesystemState(
       throw new PatchIssueValidationError([
         createPatchIssueCanonicalValidationError({
           code: "patch.target_issue_invalid",
-          path: toStartupRelativeFilePath(rootDirectory, filePath),
+          path: getTargetIssuePath(
+            rootDirectory,
+            store,
+            issueId,
+            currentIssueLocator,
+          ),
           message: error.message,
           details: {
             issueId,
@@ -130,9 +174,10 @@ export async function loadPatchIssueFilesystemState(
   }
 
   return {
-    currentParsedIssue,
+    currentParsedIssue: loadedIssue.parsedIssue,
     currentParsedIssues: await loadParsedStartupIssues(rootDirectory, indexedAt),
-    canonicalSnapshot: await readCanonicalIssueSnapshot(filePath),
+    currentIssueLocator: loadedIssue.issueLocator,
+    canonicalSnapshot: loadedIssue.canonicalSnapshot,
     store,
   };
 }
@@ -176,33 +221,37 @@ function buildPatchedIssueEnvelope(
 
 async function persistPatchedIssue(
   store: FilesystemIssueStore,
-  rootDirectory: string,
+  locator: ResolvedIssueLocator,
   issue: Issue,
   indexedAt: string,
 ): Promise<ParsedStartupIssueFile> {
-  const filePath = await store.writeIssue(issue, {
-    updatedAt: {
-      mode: "canonical_mutation",
-      timestamp: indexedAt,
+  const filePath = await store.writeIssueAtPath(
+    issue,
+    locator.absoluteFilePath,
+    {
+      updatedAt: {
+        mode: "canonical_mutation",
+        timestamp: indexedAt,
+      },
     },
-  });
+  );
 
-  return scanIssueFile({
-    rootDirectory,
+  return parseTargetedIssueFile({
     filePath,
+    startupRelativeFilePath: locator.startupRelativeFilePath,
     indexedAt,
+    expectedIssueId: issue.id,
   });
 }
 
 export async function persistPatchedIssueAndBuildEnvelope(
   state: PatchIssueFilesystemState,
-  rootDirectory: string,
   issue: Issue,
   indexedAt: string,
 ): Promise<IssueEnvelope> {
   const persistedIssue = await persistPatchedIssue(
     state.store,
-    rootDirectory,
+    state.currentIssueLocator,
     issue,
     indexedAt,
   );
