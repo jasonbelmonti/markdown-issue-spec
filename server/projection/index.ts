@@ -19,6 +19,10 @@ export {
   type ValidationErrorIndexTarget,
 } from "./index-validation-errors.ts";
 export {
+  listValidationErrors,
+  type ListValidationErrorsQuery,
+} from "./list-validation-errors.ts";
+export {
   writeProjectionState,
   type ProjectionStateWriteInput,
 } from "./write-projection-state.ts";
