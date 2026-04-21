@@ -21,6 +21,7 @@ export interface FilesystemTransitionIssueMutationBoundaryOptions {
   rootDirectory: string;
   now?: () => string;
   beforePersist?: () => Promise<void>;
+  afterPersist?: () => Promise<void>;
   mutationLock?: FilesystemIssueMutationLock;
 }
 
@@ -34,6 +35,7 @@ export function createFilesystemTransitionIssueMutationBoundary(
   const { rootDirectory } = options;
   const now = options.now ?? createTimestamp;
   const beforePersist = options.beforePersist;
+  const afterPersist = options.afterPersist;
   const mutationLock = options.mutationLock ?? createFilesystemIssueMutationLock();
 
   return {
@@ -69,6 +71,7 @@ export function createFilesystemTransitionIssueMutationBoundary(
               preparedMutation.issue,
               indexedAt,
             );
+            await afterPersist?.();
 
             return {
               status: "applied",

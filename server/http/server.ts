@@ -1,24 +1,37 @@
+import { defaultAdminHandlers } from "./handlers/default-admin-handlers.ts";
 import { createApiError } from "./errors/api-error.ts";
 import { createApiErrorResponse } from "./errors/error-response.ts";
 import { defaultMutationHandlers } from "./handlers/default-mutation-handlers.ts";
 import { defaultQueryHandlers } from "./handlers/default-query-handlers.ts";
 import type {
+  AdminRouteHandlers,
   MutationRouteHandlers,
   QueryRouteHandlers,
 } from "./handlers/types.ts";
 import type { HttpRouteDefinition } from "./route-contract.ts";
+import { createAdminRouteDefinitions } from "./routes/admin-routes.ts";
 import { createMutationRouteDefinitions } from "./routes/mutation-routes.ts";
 import { createQueryRouteDefinitions } from "./routes/query-routes.ts";
 
 export interface HttpServerOptions {
   hostname?: string;
   port?: number;
+  adminHandlers?: AdminRouteHandlers;
   mutationHandlers?: MutationRouteHandlers;
   queryHandlers?: QueryRouteHandlers;
 }
 
 const DEFAULT_HOSTNAME = "127.0.0.1";
 const DEFAULT_PORT = 3000;
+
+function isLoopbackHostname(hostname: string): boolean {
+  return (
+    hostname === "127.0.0.1" ||
+    hostname === "localhost" ||
+    hostname === "::1" ||
+    hostname === "[::1]"
+  );
+}
 
 function createNotFoundResponse(): Response {
   return createApiErrorResponse(
@@ -53,6 +66,12 @@ function resolveMutationHandlers(
   return mutationHandlers ?? defaultMutationHandlers;
 }
 
+function resolveAdminHandlers(
+  adminHandlers: AdminRouteHandlers | undefined,
+): AdminRouteHandlers {
+  return adminHandlers ?? defaultAdminHandlers;
+}
+
 function resolveQueryHandlers(
   queryHandlers: QueryRouteHandlers | undefined,
 ): QueryRouteHandlers {
@@ -65,6 +84,9 @@ export function startServer(
   const hostname = options.hostname ?? DEFAULT_HOSTNAME;
   const port = options.port ?? DEFAULT_PORT;
   const routeDefinitions = [
+    ...(isLoopbackHostname(hostname)
+      ? createAdminRouteDefinitions(resolveAdminHandlers(options.adminHandlers))
+      : []),
     ...createMutationRouteDefinitions(
       resolveMutationHandlers(options.mutationHandlers),
     ),

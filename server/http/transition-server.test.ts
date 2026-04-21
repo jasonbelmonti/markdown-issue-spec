@@ -3,14 +3,15 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { createFilesystemTransitionIssueMutationBoundary } from "../application/mutations/filesystem-transition-issue-mutation-boundary.ts";
 import type { Issue } from "../core/types/index.ts";
-import type { HttpRouteDefinition } from "./route-contract.ts";
+import {
+  openProjectionDatabase,
+  readIssueEnvelope,
+} from "../projection/index.ts";
 import { FilesystemIssueStore } from "../store/index.ts";
 import { computeIssueRevision } from "../store/issue-revision.ts";
-import { createTransitionIssueHandler } from "./handlers/transition-issue-handler.ts";
-import type { MutationRouteHandlers } from "./handlers/types.ts";
-import { createMutationRouteDefinitions } from "./routes/mutation-routes.ts";
+import { createFilesystemMutationRouteHandlers } from "./handlers/filesystem-mutation-handlers.ts";
+import { startServer } from "./server.ts";
 
 const TRANSITION_TIMESTAMP = "2026-04-12T13:45:00-05:00";
 
@@ -47,23 +48,12 @@ async function withServer<T>(
   rootDirectory: string,
   run: (baseUrl: string) => Promise<T>,
 ): Promise<T> {
-  const mutationHandlers: MutationRouteHandlers = {
-    createIssue: () => new Response("unused", { status: 500 }),
-    patchIssue: () => new Response("unused", { status: 500 }),
-    transitionIssue: createTransitionIssueHandler(
-      createFilesystemTransitionIssueMutationBoundary({
-        rootDirectory,
-        now: () => TRANSITION_TIMESTAMP,
-      }),
-    ),
-  };
-  const server = Bun.serve({
-    hostname: "127.0.0.1",
+  const server = startServer({
     port: 0,
-    routes: createBunRoutes(createMutationRouteDefinitions(mutationHandlers)),
-    fetch() {
-      return new Response("not found", { status: 404 });
-    },
+    mutationHandlers: createFilesystemMutationRouteHandlers({
+      rootDirectory,
+      transitionNow: () => TRANSITION_TIMESTAMP,
+    }),
   });
 
   try {
@@ -71,23 +61,6 @@ async function withServer<T>(
   } finally {
     server.stop(true);
   }
-}
-
-function createBunRoutes(
-  routeDefinitions: readonly HttpRouteDefinition[],
-): Bun.Serve.Options["routes"] {
-  const routes: NonNullable<Bun.Serve.Options["routes"]> = {};
-
-  for (const routeDefinition of routeDefinitions) {
-    const existingRoute = routes[routeDefinition.pathname];
-
-    routes[routeDefinition.pathname] = {
-      ...existingRoute,
-      [routeDefinition.method]: routeDefinition.handler,
-    };
-  }
-
-  return routes;
 }
 
 test("transition route serves live success, validation, and revision mismatch responses", async () => {
@@ -189,4 +162,61 @@ test("transition route serves issue_not_found for missing targets", async () => 
       },
     });
   });
+});
+
+test("transition route refreshes projection after accepted transitions and leaves it unchanged after rejected transitions", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+  const store = new FilesystemIssueStore({ rootDirectory });
+  const database = openProjectionDatabase(join(rootDirectory, ".mis", "index.sqlite"));
+
+  await store.writeIssue(EXISTING_ISSUE);
+
+  try {
+    const expectedRevision = computeIssueRevision(
+      await Bun.file(store.getIssueFilePath(EXISTING_ISSUE.id)).text(),
+    );
+
+    await withServer(rootDirectory, async (baseUrl) => {
+      const transitionResponse = await postTransition(baseUrl, EXISTING_ISSUE.id, {
+        expectedRevision,
+        to_status: "in_progress",
+      });
+      const transitionBody = await transitionResponse.json() as {
+        issue: Issue;
+        derived: Record<string, unknown>;
+        revision: string;
+        source: {
+          file_path: string;
+          indexed_at: string;
+        };
+      };
+
+      expect(transitionResponse.status).toBe(200);
+      expect(readIssueEnvelope(database, EXISTING_ISSUE.id)).toMatchObject({
+        issue: transitionBody.issue,
+        derived: transitionBody.derived,
+        revision: transitionBody.revision,
+        source: {
+          file_path: transitionBody.source.file_path,
+          indexed_at: expect.any(String),
+        },
+      });
+
+      const projectedBeforeRejectedTransition = readIssueEnvelope(
+        database,
+        EXISTING_ISSUE.id,
+      );
+      const invalidTransitionResponse = await postTransition(baseUrl, EXISTING_ISSUE.id, {
+        expectedRevision,
+        to_status: "completed",
+      });
+
+      expect(invalidTransitionResponse.status).toBe(409);
+      expect(readIssueEnvelope(database, EXISTING_ISSUE.id)).toEqual(
+        projectedBeforeRejectedTransition,
+      );
+    });
+  } finally {
+    database.close();
+  }
 });
