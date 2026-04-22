@@ -42,8 +42,18 @@ export class FilesystemIssueStore {
     issue: Issue,
     options: SerializeIssueMarkdownOptions = {},
   ): Promise<string> {
-    const filePath = this.getIssueFilePath(issue.id);
+    return this.writeIssueAtPath(
+      issue,
+      this.getIssueFilePath(issue.id),
+      options,
+    );
+  }
 
+  async writeIssueAtPath(
+    issue: Issue,
+    filePath: string,
+    options: SerializeIssueMarkdownOptions = {},
+  ): Promise<string> {
     await atomicWriteFile(filePath, serializeIssueMarkdown(issue, options));
 
     return filePath;

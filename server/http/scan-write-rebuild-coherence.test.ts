@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rename } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -270,6 +270,110 @@ test("startup scan, accepted patch writes, and rebuild keep canonical Markdown a
           },
         });
         expect(readIssueEnvelope(database, STALE_PROJECTED_ISSUE.issue.id)).toBeNull();
+      },
+    );
+  } finally {
+    database.close();
+  }
+});
+
+test("renamed issues stay writable across post-persist rebuilds", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+  const databasePath = join(rootDirectory, ".mis", "index.sqlite");
+  const database = openProjectionDatabase(databasePath);
+  const store = new FilesystemIssueStore({ rootDirectory });
+  const mutationLock = createFilesystemIssueMutationLock();
+  const rebuildProjection = createFilesystemProjectionRebuilder({
+    rootDirectory,
+    databasePath,
+  });
+
+  await store.writeIssue(EXISTING_ISSUE);
+  const canonicalFilePath = store.getIssueFilePath(EXISTING_ISSUE.id);
+  const renamedFilePath = join(rootDirectory, "vault", "issues", "schema-foundation.md");
+  await rename(canonicalFilePath, renamedFilePath);
+
+  try {
+    const startupResult = await scanIssueFilesIntoProjection({
+      database,
+      rootDirectory,
+      indexedAt: STARTUP_INDEXED_AT,
+    });
+    const projectedAfterStartup = readIssueEnvelope(database, EXISTING_ISSUE.id);
+
+    expect(startupResult.failures).toEqual([]);
+    expect(projectedAfterStartup).toMatchObject({
+      source: {
+        file_path: "vault/issues/schema-foundation.md",
+      },
+    });
+
+    await withServer(
+      {
+        adminHandlers: createFilesystemAdminRouteHandlers({
+          rootDirectory,
+          databasePath,
+          mutationLock,
+        }),
+        mutationHandlers: {
+          createIssue: () => new Response("unused", { status: 500 }),
+          patchIssue: createPatchIssueHandler(
+            createFilesystemPatchIssueMutationBoundary({
+              rootDirectory,
+              databasePath,
+              now: () => PATCH_TIMESTAMP,
+              afterPersist: rebuildProjection,
+              mutationLock,
+            }),
+          ),
+          transitionIssue: () => new Response("unused", { status: 500 }),
+        },
+        queryHandlers: createQueryHandlers(database),
+      },
+      async (baseUrl) => {
+        const firstPatchResponse = await fetch(`${baseUrl}/issues/${EXISTING_ISSUE.id}`, {
+          method: "PATCH",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            expectedRevision: projectedAfterStartup!.revision,
+            title: "First renamed patch",
+          }),
+        });
+        const firstPatchedEnvelope = await firstPatchResponse.json() as IssueEnvelope;
+
+        expect(firstPatchResponse.status).toBe(200);
+        expect(firstPatchedEnvelope.source.file_path).toBe(
+          "vault/issues/schema-foundation.md",
+        );
+        expect(readIssueEnvelope(database, EXISTING_ISSUE.id)).toMatchObject({
+          source: {
+            file_path: "vault/issues/schema-foundation.md",
+          },
+        });
+
+        const secondPatchResponse = await fetch(`${baseUrl}/issues/${EXISTING_ISSUE.id}`, {
+          method: "PATCH",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            expectedRevision: firstPatchedEnvelope.revision,
+            title: "Second renamed patch",
+          }),
+        });
+        const secondPatchedEnvelope = await secondPatchResponse.json() as IssueEnvelope;
+
+        expect(secondPatchResponse.status).toBe(200);
+        expect(secondPatchedEnvelope.issue.title).toBe("Second renamed patch");
+        expect(secondPatchedEnvelope.source.file_path).toBe(
+          "vault/issues/schema-foundation.md",
+        );
+        expect(await readFile(renamedFilePath, "utf8")).toContain(
+          "title: Second renamed patch",
+        );
+        await expect(readFile(canonicalFilePath, "utf8")).rejects.toThrow();
       },
     );
   } finally {

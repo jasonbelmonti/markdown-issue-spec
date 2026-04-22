@@ -21,6 +21,7 @@ import type {
 
 export interface FilesystemTransitionIssueMutationBoundaryOptions {
   rootDirectory: string;
+  databasePath?: string;
   now?: () => string;
   beforePersist?: () => Promise<void>;
   afterPersist?: () => Promise<void>;
@@ -54,6 +55,7 @@ export function createFilesystemTransitionIssueMutationBoundary(
               rootDirectory,
               command.issueId,
               indexedAt,
+              options.databasePath,
             );
             const preparedMutation = await prepareTransitionIssueMutation(
               filesystemState,
@@ -71,7 +73,6 @@ export function createFilesystemTransitionIssueMutationBoundary(
               persist: () =>
                 persistTransitionedIssueAndBuildEnvelope(
                   filesystemState,
-                  rootDirectory,
                   preparedMutation.issue,
                   indexedAt,
                 ),

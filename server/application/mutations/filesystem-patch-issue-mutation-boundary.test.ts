@@ -1,13 +1,15 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rename } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import type { Issue } from "../../core/types/index.ts";
+import type { Issue, IssueEnvelope } from "../../core/types/index.ts";
+import { indexIssueEnvelope, openProjectionDatabase } from "../../projection/index.ts";
 import { computeIssueRevision } from "../../store/issue-revision.ts";
 import { FilesystemIssueStore } from "../../store/index.ts";
 import type { PatchIssueMutationCommand } from "./issue-mutation-boundary.ts";
 import { createFilesystemPatchIssueMutationBoundary } from "./filesystem-patch-issue-mutation-boundary.ts";
+import { PatchIssueValidationError } from "./patch-issue-validation-error.ts";
 
 const PATCH_TIMESTAMP = "2026-04-16T19:45:00-05:00";
 
@@ -48,6 +50,20 @@ function createPatchIssueBoundary(
   });
 }
 
+async function indexProjectedIssue(
+  rootDirectory: string,
+  issue: Issue,
+  filePath: string,
+): Promise<void> {
+  const database = openProjectionDatabase(join(rootDirectory, ".mis", "index.sqlite"));
+
+  try {
+    indexIssueEnvelope(database, createEnvelope(issue, filePath));
+  } finally {
+    database.close();
+  }
+}
+
 async function writeCanonicalIssue(
   rootDirectory: string,
   issue: Issue = EXISTING_ISSUE,
@@ -55,6 +71,7 @@ async function writeCanonicalIssue(
   const store = new FilesystemIssueStore({ rootDirectory });
 
   await store.writeIssue(issue);
+  await indexProjectedIssue(rootDirectory, issue, `vault/issues/${issue.id}.md`);
 
   return store;
 }
@@ -66,6 +83,25 @@ async function readIssueSource(
   const store = new FilesystemIssueStore({ rootDirectory });
 
   return readFile(store.getIssueFilePath(issueId), "utf8");
+}
+
+function createEnvelope(issue: Issue, filePath: string): IssueEnvelope {
+  return {
+    issue,
+    revision: "rev-issue-1234",
+    source: {
+      file_path: filePath,
+      indexed_at: PATCH_TIMESTAMP,
+    },
+    derived: {
+      children_ids: [],
+      blocks_ids: [],
+      blocked_by_ids: [],
+      duplicates_ids: [],
+      ready: true,
+      is_blocked: false,
+    },
+  };
 }
 
 test("createFilesystemPatchIssueMutationBoundary restores the canonical file when post-persist rebuild fails", async () => {
@@ -91,4 +127,171 @@ test("createFilesystemPatchIssueMutationBoundary restores the canonical file whe
     }),
   ).rejects.toThrow("projection rebuild failed");
   expect(await readIssueSource(rootDirectory, EXISTING_ISSUE.id)).toBe(originalSource);
+});
+
+test("createFilesystemPatchIssueMutationBoundary patches renamed issue files using the projected locator", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+  const boundary = createPatchIssueBoundary(rootDirectory, {
+    now: () => PATCH_TIMESTAMP,
+  });
+  const store = await writeCanonicalIssue(rootDirectory);
+  const canonicalFilePath = store.getIssueFilePath(EXISTING_ISSUE.id);
+  const renamedFilePath = join(rootDirectory, "vault", "issues", "schema-foundation.md");
+  await rename(canonicalFilePath, renamedFilePath);
+  await indexProjectedIssue(
+    rootDirectory,
+    EXISTING_ISSUE,
+    "vault/issues/schema-foundation.md",
+  );
+
+  const expectedRevision = computeIssueRevision(
+    await readFile(renamedFilePath, "utf8"),
+  );
+  const result = await boundary.patchIssue({
+    ...PATCH_ISSUE_COMMAND,
+    input: {
+      ...PATCH_ISSUE_COMMAND.input,
+      expectedRevision,
+    },
+  });
+
+  expect(result.status).toBe("applied");
+  if (result.status !== "applied") {
+    throw new Error("Expected patch mutation to apply.");
+  }
+
+  expect(result.envelope.source.file_path).toBe("vault/issues/schema-foundation.md");
+  expect(await readFile(renamedFilePath, "utf8")).toContain("title: Updated title");
+  await expect(readFile(canonicalFilePath, "utf8")).rejects.toThrow();
+});
+
+test("createFilesystemPatchIssueMutationBoundary validates renamed linked issues through the accepted issue set", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+  const boundary = createPatchIssueBoundary(rootDirectory, {
+    now: () => PATCH_TIMESTAMP,
+  });
+  const store = await writeCanonicalIssue(rootDirectory, {
+    ...EXISTING_ISSUE,
+    links: [
+      {
+        rel: "depends_on",
+        target: {
+          id: "ISSUE-0002",
+        },
+        required_before: "completed",
+      },
+    ],
+  });
+  const dependencyIssue: Issue = {
+    spec_version: "mis/0.1",
+    id: "ISSUE-0002",
+    title: "Renamed dependency",
+    kind: "task",
+    status: "completed",
+    resolution: "done",
+    created_at: "2026-04-16T10:00:00-05:00",
+    body: "## Objective\n\nStay visible after a rename.\n",
+  };
+
+  await store.writeIssue(dependencyIssue);
+  await rename(
+    store.getIssueFilePath(dependencyIssue.id),
+    join(rootDirectory, "vault", "issues", "dependency-renamed.md"),
+  );
+
+  const expectedRevision = computeIssueRevision(
+    await readIssueSource(rootDirectory, EXISTING_ISSUE.id),
+  );
+  const result = await boundary.patchIssue({
+    ...PATCH_ISSUE_COMMAND,
+    input: {
+      ...PATCH_ISSUE_COMMAND.input,
+      expectedRevision,
+    },
+  });
+
+  expect(result.status).toBe("applied");
+  if (result.status !== "applied") {
+    throw new Error("Expected patch mutation to apply.");
+  }
+
+  expect(result.envelope.derived.blocked_by_ids).toEqual([]);
+  expect(result.envelope.derived.ready).toBe(true);
+});
+
+test("createFilesystemPatchIssueMutationBoundary rejects targets that are no longer in the accepted issue set", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+  const boundary = createPatchIssueBoundary(rootDirectory, {
+    now: () => PATCH_TIMESTAMP,
+  });
+  const store = await writeCanonicalIssue(rootDirectory);
+
+  await store.writeIssueAtPath(
+    {
+      ...EXISTING_ISSUE,
+      title: "Duplicate target issue copy",
+    },
+    join(rootDirectory, "vault", "issues", "duplicate.md"),
+  );
+
+  const expectedRevision = computeIssueRevision(
+    await readIssueSource(rootDirectory, EXISTING_ISSUE.id),
+  );
+
+  await expect(
+    boundary.patchIssue({
+      ...PATCH_ISSUE_COMMAND,
+      input: {
+        ...PATCH_ISSUE_COMMAND.input,
+        expectedRevision,
+      },
+    }),
+  ).rejects.toEqual(
+    expect.objectContaining<Partial<PatchIssueValidationError>>({
+      name: "PatchIssueValidationError",
+      errors: [
+        expect.objectContaining({
+          code: "patch.target_issue_invalid",
+          path: `vault/issues/${EXISTING_ISSUE.id}.md`,
+          source: "canonical",
+          details: {
+            issueId: EXISTING_ISSUE.id,
+            filePath: `vault/issues/${EXISTING_ISSUE.id}.md`,
+          },
+        }),
+      ],
+    }),
+  );
+});
+
+test("createFilesystemPatchIssueMutationBoundary rejects unsafe issue ids as request validation errors", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+  const boundary = createPatchIssueBoundary(rootDirectory, {
+    now: () => PATCH_TIMESTAMP,
+  });
+
+  await expect(
+    boundary.patchIssue({
+      ...PATCH_ISSUE_COMMAND,
+      issueId: "../ISSUE-1234",
+      input: {
+        ...PATCH_ISSUE_COMMAND.input,
+        expectedRevision: "stale-revision",
+      },
+    }),
+  ).rejects.toEqual(
+    expect.objectContaining<Partial<PatchIssueValidationError>>({
+      name: "PatchIssueValidationError",
+      errors: [
+        expect.objectContaining({
+          code: "patch.invalid_issue_id",
+          path: "/id",
+          source: "request",
+          details: {
+            issueId: "../ISSUE-1234",
+          },
+        }),
+      ],
+    }),
+  );
 });

@@ -8,10 +8,10 @@ import type {
 import { validateIssueGraph } from "../../core/validation/index.ts";
 import {
   buildStartupIssueEnvelope,
-  listCanonicalIssueFiles,
+  loadAcceptedParsedIssues,
   scanIssueFile,
-  toStartupRelativeFilePath,
   type ParsedStartupIssueFile,
+  toStartupRelativeFilePath,
 } from "../../startup/index.ts";
 import { FilesystemIssueStore } from "../../store/index.ts";
 import {
@@ -26,24 +26,14 @@ export interface CreateIssueFilesystemState {
   store: FilesystemIssueStore;
 }
 
-async function loadParsedStartupIssues(
+async function loadCreateIssueStartupIssues(
   rootDirectory: string,
   indexedAt: string,
-): Promise<ParsedStartupIssueFile[]> {
-  const issueFilePaths = await listCanonicalIssueFiles(rootDirectory);
-  const parsedIssues = await Promise.all(
-    issueFilePaths.map((filePath) =>
-      scanIssueFile({
-        rootDirectory,
-        filePath,
-        indexedAt,
-      }).catch(() => null),
-    ),
-  );
-
-  return parsedIssues.filter(
-    (parsedIssue): parsedIssue is ParsedStartupIssueFile => parsedIssue !== null,
-  );
+): ReturnType<typeof loadAcceptedParsedIssues> {
+  return loadAcceptedParsedIssues({
+    rootDirectory,
+    indexedAt,
+  });
 }
 
 function isMissingFileError(error: unknown): error is NodeJS.ErrnoException {
@@ -51,15 +41,14 @@ function isMissingFileError(error: unknown): error is NodeJS.ErrnoException {
 }
 
 function createIssueIdConflictError(
-  rootDirectory: string,
-  candidateFilePath: string,
+  filePath: string,
   issueId: string,
 ): CreateIssueValidationError {
   return new CreateIssueValidationError([
     createCreateIssueCanonicalValidationError({
       code: "create.issue_id_conflict",
-      path: toStartupRelativeFilePath(rootDirectory, candidateFilePath),
-      message: `Cannot create issue because canonical file already exists for "${issueId}".`,
+      path: filePath,
+      message: `Cannot create issue because canonical issue id "${issueId}" already exists.`,
       details: {
         issueId,
       },
@@ -71,8 +60,19 @@ async function assertCreateIssueIdAvailable(
   store: FilesystemIssueStore,
   rootDirectory: string,
   issueId: string,
+  parsedIssues: readonly ParsedStartupIssueFile[],
 ): Promise<string> {
   const candidateFilePath = store.getIssueFilePath(issueId);
+  const conflictingParsedIssue = parsedIssues.find(
+    (parsedIssue) => parsedIssue.issue.id === issueId,
+  );
+
+  if (conflictingParsedIssue !== undefined) {
+    throw createIssueIdConflictError(
+      conflictingParsedIssue.source.file_path,
+      issueId,
+    );
+  }
 
   try {
     await access(candidateFilePath);
@@ -84,7 +84,10 @@ async function assertCreateIssueIdAvailable(
     throw error;
   }
 
-  throw createIssueIdConflictError(rootDirectory, candidateFilePath, issueId);
+  throw createIssueIdConflictError(
+    toStartupRelativeFilePath(rootDirectory, candidateFilePath),
+    issueId,
+  );
 }
 
 export async function loadCreateIssueFilesystemState(
@@ -93,14 +96,19 @@ export async function loadCreateIssueFilesystemState(
   indexedAt: string,
 ): Promise<CreateIssueFilesystemState> {
   const store = new FilesystemIssueStore({ rootDirectory });
+  const {
+    parsedIssues,
+    acceptedParsedIssues: currentParsedIssues,
+  } = await loadCreateIssueStartupIssues(rootDirectory, indexedAt);
   const candidateFilePath = await assertCreateIssueIdAvailable(
     store,
     rootDirectory,
     issueId,
+    parsedIssues,
   );
 
   return {
-    currentParsedIssues: await loadParsedStartupIssues(rootDirectory, indexedAt),
+    currentParsedIssues,
     candidateAbsoluteFilePath: candidateFilePath,
     candidateFilePath: toStartupRelativeFilePath(rootDirectory, candidateFilePath),
     store,

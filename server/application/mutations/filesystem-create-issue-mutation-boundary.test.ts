@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, readdir } from "node:fs/promises";
+import { mkdtemp, readdir, rename } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -432,7 +432,7 @@ test("createFilesystemCreateIssueMutationBoundary rejects create id collisions w
       code: "create.issue_id_conflict",
       source: "canonical",
       path: `vault/issues/${conflictingIssueId}.md`,
-      message: `Cannot create issue because canonical file already exists for "${conflictingIssueId}".`,
+      message: `Cannot create issue because canonical issue id "${conflictingIssueId}" already exists.`,
       details: {
         issueId: conflictingIssueId,
       },
@@ -445,6 +445,101 @@ test("createFilesystemCreateIssueMutationBoundary rejects create id collisions w
   });
   expect(await readdir(join(rootDirectory, "vault", "issues"))).toEqual([
     `${conflictingIssueId}.md`,
+  ]);
+});
+
+test("createFilesystemCreateIssueMutationBoundary rejects create id collisions when the existing issue file was renamed", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+  const conflictingIssueId = "ISSUE-00000000000000000000000011";
+  const store = new FilesystemIssueStore({ rootDirectory });
+  const boundary = createCreateIssueBoundary(rootDirectory, {
+    issueIdGenerator: () => conflictingIssueId,
+  });
+
+  await store.writeIssue({
+    spec_version: "mis/0.1",
+    id: conflictingIssueId,
+    title: "Existing renamed issue",
+    kind: "task",
+    status: "accepted",
+    created_at: "2026-04-14T10:00:00-05:00",
+    body: "## Objective\n\nDo not duplicate me.\n",
+  });
+  await rename(
+    store.getIssueFilePath(conflictingIssueId),
+    join(rootDirectory, "vault", "issues", "renamed-existing.md"),
+  );
+
+  await expectSingleCreateValidationError(
+    boundary.createIssue(CREATE_ISSUE_COMMAND),
+    {
+      code: "create.issue_id_conflict",
+      source: "canonical",
+      path: "vault/issues/renamed-existing.md",
+      message: `Cannot create issue because canonical issue id "${conflictingIssueId}" already exists.`,
+      details: {
+        issueId: conflictingIssueId,
+      },
+    },
+  );
+  expect(await readdir(join(rootDirectory, "vault", "issues"))).toEqual([
+    "renamed-existing.md",
+  ]);
+});
+
+test("createFilesystemCreateIssueMutationBoundary rejects create id collisions when only renamed duplicate files exist", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+  const conflictingIssueId = "ISSUE-00000000000000000000000011";
+  const store = new FilesystemIssueStore({ rootDirectory });
+  const boundary = createCreateIssueBoundary(rootDirectory, {
+    issueIdGenerator: () => conflictingIssueId,
+  });
+
+  await store.writeIssue({
+    spec_version: "mis/0.1",
+    id: conflictingIssueId,
+    title: "First renamed duplicate",
+    kind: "task",
+    status: "accepted",
+    created_at: "2026-04-14T10:00:00-05:00",
+    body: "## Objective\n\nStill reserve this id.\n",
+  });
+  await rename(
+    store.getIssueFilePath(conflictingIssueId),
+    join(rootDirectory, "vault", "issues", "renamed-a.md"),
+  );
+  await store.writeIssueAtPath(
+    {
+      spec_version: "mis/0.1",
+      id: conflictingIssueId,
+      title: "Second renamed duplicate",
+      kind: "task",
+      status: "accepted",
+      created_at: "2026-04-14T10:05:00-05:00",
+      body: "## Objective\n\nAlso reserve this id.\n",
+    },
+    join(rootDirectory, "vault", "issues", "renamed-b.md"),
+  );
+
+  const error = await expectCreateValidationError(
+    boundary.createIssue(CREATE_ISSUE_COMMAND),
+  );
+
+  expect(error.errors).toHaveLength(1);
+  expect(error.errors[0]).toMatchObject({
+    code: "create.issue_id_conflict",
+    source: "canonical",
+    message: `Cannot create issue because canonical issue id "${conflictingIssueId}" already exists.`,
+    details: {
+      issueId: conflictingIssueId,
+    },
+  });
+  expect(["vault/issues/renamed-a.md", "vault/issues/renamed-b.md"]).toContain(
+    error.errors[0]?.path,
+  );
+  expect(await readdir(join(rootDirectory, "vault", "issues"))).toEqual([
+    "renamed-a.md",
+    "renamed-b.md",
   ]);
 });
 

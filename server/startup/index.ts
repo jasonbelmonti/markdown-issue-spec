@@ -1,8 +1,12 @@
 export { listCanonicalIssueFiles } from "./issue-file-discovery.ts";
 export {
+  parseDiscoveredIssueFile,
+  parseTargetedIssueFile,
   scanIssueFile,
   ScanIssueFileIdMismatchError,
   toStartupRelativeFilePath,
+  type ParseDiscoveredIssueFileOptions,
+  type ParseTargetedIssueFileOptions,
   type ScanIssueFileOptions,
 } from "./scan-issue-file.ts";
 export {
@@ -10,10 +14,14 @@ export {
   type ParsedStartupIssueFile,
 } from "./startup-envelope.ts";
 export {
+  loadAcceptedParsedIssues,
   rejectDuplicateParsedIssueIds,
+  type LoadAcceptedParsedIssuesOptions,
+  type StartupScanFailure,
+} from "./accepted-parsed-issues.ts";
+export {
   scanIssueFilesIntoProjection,
   type ScanIssuesIntoProjectionOptions,
-  type StartupScanFailure,
   type StartupScanResult,
 } from "./scan-issues.ts";
 export {

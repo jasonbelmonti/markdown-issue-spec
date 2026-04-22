@@ -10,6 +10,10 @@ export {
 export { indexIssueEnvelope } from "./index-issue.ts";
 export { readIssueEnvelope } from "./read-issue-envelope.ts";
 export {
+  readIssueLocator,
+  type ProjectionIssueLocator,
+} from "./read-issue-locator.ts";
+export {
   listIssueEnvelopes,
   type ListIssueEnvelopesPage,
   type ListIssueEnvelopesQuery,

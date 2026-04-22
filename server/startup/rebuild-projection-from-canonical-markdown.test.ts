@@ -261,3 +261,25 @@ test("rebuildProjectionFromCanonicalMarkdown refreshes current validation errors
     database.close();
   }
 });
+
+test("rebuildProjectionFromCanonicalMarkdown preserves renamed file locators in projection state", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+  const database = openMemoryProjectionDatabase();
+
+  await writeIssueFile(rootDirectory, "schema-foundation.md", ISSUE_0100_SOURCE);
+
+  try {
+    const result = await rebuildProjection(database, rootDirectory);
+
+    expect(result.failures).toEqual([]);
+    expect(getIndexedIssueRows(database)).toEqual([
+      {
+        issue_id: "ISSUE-0100",
+        file_path: "vault/issues/schema-foundation.md",
+        title: "Projection root",
+      },
+    ]);
+  } finally {
+    database.close();
+  }
+});
