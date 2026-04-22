@@ -43,15 +43,14 @@ function isMissingFileError(error: unknown): error is NodeJS.ErrnoException {
 }
 
 function createIssueIdConflictError(
-  rootDirectory: string,
-  candidateFilePath: string,
+  filePath: string,
   issueId: string,
 ): CreateIssueValidationError {
   return new CreateIssueValidationError([
     createCreateIssueCanonicalValidationError({
       code: "create.issue_id_conflict",
-      path: toStartupRelativeFilePath(rootDirectory, candidateFilePath),
-      message: `Cannot create issue because canonical file already exists for "${issueId}".`,
+      path: filePath,
+      message: `Cannot create issue because canonical issue id "${issueId}" already exists.`,
       details: {
         issueId,
       },
@@ -63,8 +62,19 @@ async function assertCreateIssueIdAvailable(
   store: FilesystemIssueStore,
   rootDirectory: string,
   issueId: string,
+  currentParsedIssues: readonly ParsedStartupIssueFile[],
 ): Promise<string> {
   const candidateFilePath = store.getIssueFilePath(issueId);
+  const conflictingParsedIssue = currentParsedIssues.find(
+    (parsedIssue) => parsedIssue.issue.id === issueId,
+  );
+
+  if (conflictingParsedIssue !== undefined) {
+    throw createIssueIdConflictError(
+      conflictingParsedIssue.source.file_path,
+      issueId,
+    );
+  }
 
   try {
     await access(candidateFilePath);
@@ -76,7 +86,10 @@ async function assertCreateIssueIdAvailable(
     throw error;
   }
 
-  throw createIssueIdConflictError(rootDirectory, candidateFilePath, issueId);
+  throw createIssueIdConflictError(
+    toStartupRelativeFilePath(rootDirectory, candidateFilePath),
+    issueId,
+  );
 }
 
 export async function loadCreateIssueFilesystemState(
@@ -85,14 +98,16 @@ export async function loadCreateIssueFilesystemState(
   indexedAt: string,
 ): Promise<CreateIssueFilesystemState> {
   const store = new FilesystemIssueStore({ rootDirectory });
+  const currentParsedIssues = await loadParsedStartupIssues(rootDirectory, indexedAt);
   const candidateFilePath = await assertCreateIssueIdAvailable(
     store,
     rootDirectory,
     issueId,
+    currentParsedIssues,
   );
 
   return {
-    currentParsedIssues: await loadParsedStartupIssues(rootDirectory, indexedAt),
+    currentParsedIssues,
     candidateAbsoluteFilePath: candidateFilePath,
     candidateFilePath: toStartupRelativeFilePath(rootDirectory, candidateFilePath),
     store,

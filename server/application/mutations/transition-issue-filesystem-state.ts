@@ -292,9 +292,29 @@ export async function loadTransitionIssueFilesystemState(
     throw error;
   }
 
+  const currentParsedIssues = await loadParsedStartupIssues(rootDirectory, indexedAt);
+  if (
+    !currentParsedIssues.some(
+      (parsedIssue) =>
+        parsedIssue.issue.id === issueId &&
+        parsedIssue.source.file_path === loadedIssue.issueLocator.startupRelativeFilePath,
+    )
+  ) {
+    throw createTargetIssueInvalidError(
+      rootDirectory,
+      loadedIssue.issueLocator.absoluteFilePath,
+      issueId,
+      `Cannot transition issue "${issueId}" because the accepted canonical issue set does not contain the resolved target file.`,
+      {
+        issueId,
+        filePath: loadedIssue.issueLocator.startupRelativeFilePath,
+      },
+    );
+  }
+
   return {
     currentParsedIssue: loadedIssue.parsedIssue,
-    currentParsedIssues: await loadParsedStartupIssues(rootDirectory, indexedAt),
+    currentParsedIssues,
     currentIssueLocator: loadedIssue.issueLocator,
     canonicalSnapshot: loadedIssue.canonicalSnapshot,
     loadDependencyIssues: (nextStatus) =>

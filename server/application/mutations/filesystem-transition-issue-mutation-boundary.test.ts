@@ -860,6 +860,45 @@ test("createFilesystemTransitionIssueMutationBoundary keeps renamed related issu
   expect(result.envelope.derived.children_ids).toEqual([childIssue.id]);
 });
 
+test("createFilesystemTransitionIssueMutationBoundary rejects targets that are no longer in the accepted issue set", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+  const boundary = createTransitionIssueBoundary(rootDirectory, {
+    now: () => TRANSITION_TIMESTAMP,
+  });
+  const store = await writeCanonicalIssue(rootDirectory);
+
+  await store.writeIssueAtPath(
+    {
+      ...EXISTING_ISSUE,
+      title: "Duplicate target issue copy",
+    },
+    join(rootDirectory, "vault", "issues", "duplicate.md"),
+  );
+
+  const expectedRevision = await readIssueRevision(rootDirectory, EXISTING_ISSUE.id);
+  const error = await expectTransitionValidationError(
+    boundary.transitionIssue({
+      ...TRANSITION_ISSUE_COMMAND,
+      input: {
+        expectedRevision,
+        to_status: "in_progress",
+      },
+    }),
+  );
+
+  expect(error.errors).toEqual([
+    expect.objectContaining({
+      code: "transition.target_issue_invalid",
+      path: `vault/issues/${EXISTING_ISSUE.id}.md`,
+      source: "canonical",
+      details: {
+        issueId: EXISTING_ISSUE.id,
+        filePath: `vault/issues/${EXISTING_ISSUE.id}.md`,
+      },
+    }),
+  ]);
+});
+
 test("createFilesystemTransitionIssueMutationBoundary rejects unsafe issue ids as request validation errors", async () => {
   const rootDirectory = await createTemporaryRootDirectory();
   const boundary = createTransitionIssueBoundary(rootDirectory, {

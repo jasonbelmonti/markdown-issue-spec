@@ -41,6 +41,35 @@ export interface PatchIssueFilesystemState {
   store: FilesystemIssueStore;
 }
 
+function ensureAcceptedTargetIssue(
+  issueId: string,
+  issueLocator: ResolvedIssueLocator,
+  currentParsedIssues: readonly ParsedStartupIssueFile[],
+): void {
+  if (
+    currentParsedIssues.some(
+      (parsedIssue) =>
+        parsedIssue.issue.id === issueId &&
+        parsedIssue.source.file_path === issueLocator.startupRelativeFilePath,
+    )
+  ) {
+    return;
+  }
+
+  throw new PatchIssueValidationError([
+    createPatchIssueCanonicalValidationError({
+      code: "patch.target_issue_invalid",
+      path: issueLocator.startupRelativeFilePath,
+      message:
+        `Cannot patch issue "${issueId}" because the accepted canonical issue set does not contain the resolved target file.`,
+      details: {
+        issueId,
+        filePath: issueLocator.startupRelativeFilePath,
+      },
+    }),
+  ]);
+}
+
 async function loadParsedStartupIssues(
   rootDirectory: string,
   indexedAt: string,
@@ -164,9 +193,16 @@ export async function loadPatchIssueFilesystemState(
     throw error;
   }
 
+  const currentParsedIssues = await loadParsedStartupIssues(rootDirectory, indexedAt);
+  ensureAcceptedTargetIssue(
+    issueId,
+    loadedIssue.issueLocator,
+    currentParsedIssues,
+  );
+
   return {
     currentParsedIssue: loadedIssue.parsedIssue,
-    currentParsedIssues: await loadParsedStartupIssues(rootDirectory, indexedAt),
+    currentParsedIssues,
     currentIssueLocator: loadedIssue.issueLocator,
     canonicalSnapshot: loadedIssue.canonicalSnapshot,
     store,

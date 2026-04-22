@@ -219,6 +219,51 @@ test("createFilesystemPatchIssueMutationBoundary validates renamed linked issues
   expect(result.envelope.derived.ready).toBe(true);
 });
 
+test("createFilesystemPatchIssueMutationBoundary rejects targets that are no longer in the accepted issue set", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+  const boundary = createPatchIssueBoundary(rootDirectory, {
+    now: () => PATCH_TIMESTAMP,
+  });
+  const store = await writeCanonicalIssue(rootDirectory);
+
+  await store.writeIssueAtPath(
+    {
+      ...EXISTING_ISSUE,
+      title: "Duplicate target issue copy",
+    },
+    join(rootDirectory, "vault", "issues", "duplicate.md"),
+  );
+
+  const expectedRevision = computeIssueRevision(
+    await readIssueSource(rootDirectory, EXISTING_ISSUE.id),
+  );
+
+  await expect(
+    boundary.patchIssue({
+      ...PATCH_ISSUE_COMMAND,
+      input: {
+        ...PATCH_ISSUE_COMMAND.input,
+        expectedRevision,
+      },
+    }),
+  ).rejects.toEqual(
+    expect.objectContaining<Partial<PatchIssueValidationError>>({
+      name: "PatchIssueValidationError",
+      errors: [
+        expect.objectContaining({
+          code: "patch.target_issue_invalid",
+          path: `vault/issues/${EXISTING_ISSUE.id}.md`,
+          source: "canonical",
+          details: {
+            issueId: EXISTING_ISSUE.id,
+            filePath: `vault/issues/${EXISTING_ISSUE.id}.md`,
+          },
+        }),
+      ],
+    }),
+  );
+});
+
 test("createFilesystemPatchIssueMutationBoundary rejects unsafe issue ids as request validation errors", async () => {
   const rootDirectory = await createTemporaryRootDirectory();
   const boundary = createPatchIssueBoundary(rootDirectory, {
