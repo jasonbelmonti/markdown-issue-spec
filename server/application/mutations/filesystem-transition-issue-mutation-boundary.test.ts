@@ -815,6 +815,77 @@ test("createFilesystemTransitionIssueMutationBoundary resolves renamed dependenc
   });
 });
 
+test("createFilesystemTransitionIssueMutationBoundary rejects dependencies that are no longer in the accepted issue set", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+  const links = [
+    {
+      rel: "depends_on" as const,
+      target: {
+        id: "ISSUE-0002",
+      },
+      required_before: "in_progress" as const,
+    },
+  ];
+  const boundary = createTransitionIssueBoundary(rootDirectory, {
+    now: () => TRANSITION_TIMESTAMP,
+  });
+  const store = await writeCanonicalIssue(rootDirectory, {
+    ...EXISTING_ISSUE,
+    links,
+  });
+  const dependencyIssue: Issue = {
+    spec_version: "mis/0.1",
+    id: "ISSUE-0002",
+    title: "Dependency before duplicate drift",
+    kind: "task",
+    status: "completed",
+    resolution: "done",
+    created_at: "2026-04-16T10:00:00-05:00",
+    body: "## Objective\n\nInitially valid dependency.\n",
+  };
+
+  await store.writeIssue(dependencyIssue);
+  await indexProjectedIssue(
+    rootDirectory,
+    dependencyIssue,
+    "vault/issues/ISSUE-0002.md",
+  );
+  await store.writeIssueAtPath(
+    {
+      ...dependencyIssue,
+      title: "Duplicate dependency copy",
+    },
+    join(rootDirectory, "vault", "issues", "duplicate-dependency.md"),
+  );
+
+  const expectedRevision = await readIssueRevision(rootDirectory, EXISTING_ISSUE.id);
+  const originalSource = await readIssueSource(rootDirectory, EXISTING_ISSUE.id);
+  const error = await expectTransitionValidationError(
+    boundary.transitionIssue({
+      ...TRANSITION_ISSUE_COMMAND,
+      input: {
+        expectedRevision,
+        to_status: "in_progress",
+      },
+    }),
+  );
+
+  expect(error.errors).toEqual([
+    {
+      code: "transition.dependency_issue_invalid",
+      source: "canonical",
+      path: "/links/0/target/id",
+      message:
+        "Dependency issue ISSUE-0002 is not part of the accepted canonical issue set.",
+      details: {
+        dependencyIssueId: "ISSUE-0002",
+        filePath: "vault/issues/ISSUE-0002.md",
+      },
+    },
+  ]);
+  expect(await readIssueSource(rootDirectory, EXISTING_ISSUE.id)).toBe(originalSource);
+});
+
 test("createFilesystemTransitionIssueMutationBoundary keeps renamed related issues in derived envelopes", async () => {
   const rootDirectory = await createTemporaryRootDirectory();
   const boundary = createTransitionIssueBoundary(rootDirectory, {

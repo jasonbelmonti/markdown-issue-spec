@@ -30,6 +30,7 @@ import {
   createTransitionIssueCanonicalValidationError,
   createTransitionIssueRequestValidationError,
   createTransitionIssueValidationError,
+  TransitionIssueValidationError,
   toTransitionIssueValidationError,
 } from "./transition-issue-validation-error.ts";
 
@@ -99,10 +100,23 @@ function getTargetIssueFilePath(
   return currentIssueLocator?.absoluteFilePath ?? store.getIssueFilePath(issueId);
 }
 
+function isAcceptedIssueAtResolvedPath(
+  currentParsedIssues: readonly ParsedStartupIssueFile[],
+  issueId: string,
+  issueLocator: ResolvedIssueLocator,
+): boolean {
+  return currentParsedIssues.some(
+    (parsedIssue) =>
+      parsedIssue.issue.id === issueId &&
+      parsedIssue.source.file_path === issueLocator.startupRelativeFilePath,
+  );
+}
+
 async function loadDependencyIssues(
   indexedAt: string,
   resolver: ExistingIssuePathResolver,
   store: FilesystemIssueStore,
+  currentParsedIssues: readonly ParsedStartupIssueFile[],
   issue: Issue,
   nextStatus: "in_progress" | "completed",
 ): Promise<Issue[]> {
@@ -133,6 +147,24 @@ async function loadDependencyIssues(
         indexedAt,
         expectedIssueId: link.target.id,
       });
+
+      if (
+        !isAcceptedIssueAtResolvedPath(
+          currentParsedIssues,
+          link.target.id,
+          dependencyLocator,
+        )
+      ) {
+        throw createDependencyIssueValidationError(
+          "transition.dependency_issue_invalid",
+          index,
+          link.target.id,
+          `Dependency issue ${link.target.id} is not part of the accepted canonical issue set.`,
+          {
+            filePath: dependencyLocator.startupRelativeFilePath,
+          },
+        );
+      }
 
       dependencyIssuesById.set(link.target.id, parsedDependencyIssue.issue);
     } catch (error) {
@@ -165,6 +197,10 @@ async function loadDependencyIssues(
             filePath: dependencyLocator?.startupRelativeFilePath,
           },
         );
+      }
+
+      if (error instanceof TransitionIssueValidationError) {
+        throw error;
       }
 
       const validationError = toTransitionIssueValidationError(error);
@@ -293,13 +329,7 @@ export async function loadTransitionIssueFilesystemState(
   }
 
   const currentParsedIssues = await loadParsedStartupIssues(rootDirectory, indexedAt);
-  if (
-    !currentParsedIssues.some(
-      (parsedIssue) =>
-        parsedIssue.issue.id === issueId &&
-        parsedIssue.source.file_path === loadedIssue.issueLocator.startupRelativeFilePath,
-    )
-  ) {
+  if (!isAcceptedIssueAtResolvedPath(currentParsedIssues, issueId, loadedIssue.issueLocator)) {
     throw createTargetIssueInvalidError(
       rootDirectory,
       loadedIssue.issueLocator.absoluteFilePath,
@@ -322,6 +352,7 @@ export async function loadTransitionIssueFilesystemState(
         indexedAt,
         resolver,
         store,
+        currentParsedIssues,
         loadedIssue.parsedIssue.issue,
         nextStatus,
       ),

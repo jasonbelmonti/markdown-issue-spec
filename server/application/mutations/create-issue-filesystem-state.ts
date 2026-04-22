@@ -26,16 +26,14 @@ export interface CreateIssueFilesystemState {
   store: FilesystemIssueStore;
 }
 
-async function loadParsedStartupIssues(
+async function loadCreateIssueStartupIssues(
   rootDirectory: string,
   indexedAt: string,
-): Promise<ParsedStartupIssueFile[]> {
-  const { acceptedParsedIssues } = await loadAcceptedParsedIssues({
+): ReturnType<typeof loadAcceptedParsedIssues> {
+  return loadAcceptedParsedIssues({
     rootDirectory,
     indexedAt,
   });
-
-  return acceptedParsedIssues;
 }
 
 function isMissingFileError(error: unknown): error is NodeJS.ErrnoException {
@@ -62,10 +60,10 @@ async function assertCreateIssueIdAvailable(
   store: FilesystemIssueStore,
   rootDirectory: string,
   issueId: string,
-  currentParsedIssues: readonly ParsedStartupIssueFile[],
+  parsedIssues: readonly ParsedStartupIssueFile[],
 ): Promise<string> {
   const candidateFilePath = store.getIssueFilePath(issueId);
-  const conflictingParsedIssue = currentParsedIssues.find(
+  const conflictingParsedIssue = parsedIssues.find(
     (parsedIssue) => parsedIssue.issue.id === issueId,
   );
 
@@ -98,12 +96,15 @@ export async function loadCreateIssueFilesystemState(
   indexedAt: string,
 ): Promise<CreateIssueFilesystemState> {
   const store = new FilesystemIssueStore({ rootDirectory });
-  const currentParsedIssues = await loadParsedStartupIssues(rootDirectory, indexedAt);
+  const {
+    parsedIssues,
+    acceptedParsedIssues: currentParsedIssues,
+  } = await loadCreateIssueStartupIssues(rootDirectory, indexedAt);
   const candidateFilePath = await assertCreateIssueIdAvailable(
     store,
     rootDirectory,
     issueId,
-    currentParsedIssues,
+    parsedIssues,
   );
 
   return {

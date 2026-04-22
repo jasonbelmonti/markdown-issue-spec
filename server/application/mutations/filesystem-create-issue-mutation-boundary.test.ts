@@ -487,6 +487,62 @@ test("createFilesystemCreateIssueMutationBoundary rejects create id collisions w
   ]);
 });
 
+test("createFilesystemCreateIssueMutationBoundary rejects create id collisions when only renamed duplicate files exist", async () => {
+  const rootDirectory = await createTemporaryRootDirectory();
+  const conflictingIssueId = "ISSUE-00000000000000000000000011";
+  const store = new FilesystemIssueStore({ rootDirectory });
+  const boundary = createCreateIssueBoundary(rootDirectory, {
+    issueIdGenerator: () => conflictingIssueId,
+  });
+
+  await store.writeIssue({
+    spec_version: "mis/0.1",
+    id: conflictingIssueId,
+    title: "First renamed duplicate",
+    kind: "task",
+    status: "accepted",
+    created_at: "2026-04-14T10:00:00-05:00",
+    body: "## Objective\n\nStill reserve this id.\n",
+  });
+  await rename(
+    store.getIssueFilePath(conflictingIssueId),
+    join(rootDirectory, "vault", "issues", "renamed-a.md"),
+  );
+  await store.writeIssueAtPath(
+    {
+      spec_version: "mis/0.1",
+      id: conflictingIssueId,
+      title: "Second renamed duplicate",
+      kind: "task",
+      status: "accepted",
+      created_at: "2026-04-14T10:05:00-05:00",
+      body: "## Objective\n\nAlso reserve this id.\n",
+    },
+    join(rootDirectory, "vault", "issues", "renamed-b.md"),
+  );
+
+  const error = await expectCreateValidationError(
+    boundary.createIssue(CREATE_ISSUE_COMMAND),
+  );
+
+  expect(error.errors).toHaveLength(1);
+  expect(error.errors[0]).toMatchObject({
+    code: "create.issue_id_conflict",
+    source: "canonical",
+    message: `Cannot create issue because canonical issue id "${conflictingIssueId}" already exists.`,
+    details: {
+      issueId: conflictingIssueId,
+    },
+  });
+  expect(["vault/issues/renamed-a.md", "vault/issues/renamed-b.md"]).toContain(
+    error.errors[0]?.path,
+  );
+  expect(await readdir(join(rootDirectory, "vault", "issues"))).toEqual([
+    "renamed-a.md",
+    "renamed-b.md",
+  ]);
+});
+
 test("createFilesystemCreateIssueMutationBoundary removes the created canonical file when post-persist rebuild fails", async () => {
   const rootDirectory = await createTemporaryRootDirectory();
   const boundary = createCreateIssueBoundary(rootDirectory, {

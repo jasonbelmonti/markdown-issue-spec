@@ -87,12 +87,15 @@ export interface LoadAcceptedParsedIssuesOptions {
   indexedAt: Rfc3339Timestamp;
 }
 
-export async function loadAcceptedParsedIssues(
-  options: LoadAcceptedParsedIssuesOptions,
-): Promise<{
+export interface LoadAcceptedParsedIssuesResult {
+  parsedIssues: ParsedStartupIssueFile[];
   acceptedParsedIssues: ParsedStartupIssueFile[];
   failures: StartupScanFailure[];
-}> {
+}
+
+export async function loadAcceptedParsedIssues(
+  options: LoadAcceptedParsedIssuesOptions,
+): Promise<LoadAcceptedParsedIssuesResult> {
   const issueFilePaths = await listCanonicalIssueFiles(options.rootDirectory);
   const parsedIssues: ParsedStartupIssueFile[] = [];
   const failures: StartupScanFailure[] = [];
@@ -122,6 +125,7 @@ export async function loadAcceptedParsedIssues(
   const duplicateRejection = rejectDuplicateParsedIssueIds(parsedIssues);
 
   return {
+    parsedIssues,
     acceptedParsedIssues: duplicateRejection.acceptedParsedIssues,
     failures: [...failures, ...duplicateRejection.failures],
   };
